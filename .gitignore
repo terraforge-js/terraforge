@@ -1,0 +1,16 @@
+# dist
+node_modules
+cdk.out
+
+# OS Files
+.DS_Store*
+.AppleDouble
+Icon?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.directory
+.cache
+.awsless
+*~
