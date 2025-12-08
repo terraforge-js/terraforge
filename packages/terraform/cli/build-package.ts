@@ -41,12 +41,19 @@ if (!packageData.version) {
 	process.exit(1)
 }
 
-console.log(values)
-console.log(packageData)
-
 const org = values.org
 const type = values.type
 const version = packageData.version
+
+console.log('org:     ', org)
+console.log('type:    ', type)
+console.log('version: ', version)
+
+const ok = confirm('Continue?')
+
+if (!ok) {
+	process.exit(0)
+}
 
 const load = createLazyPlugin({ org, type, version })
 const plugin = await load()
@@ -61,8 +68,6 @@ const types = generateTypes(
 
 await plugin.stop()
 
-// console.log(types)
-
 await Bun.write(`./src/types.ts`, types)
 
 await Bun.write(
@@ -71,9 +76,9 @@ await Bun.write(
 import { createTerraformAPI } from '@terraforge/terraform'
 import { root } from './types.ts'
 
-export const aws = createTerraformAPI<typeof root.${type}>({
+export const ${type} = createTerraformAPI<typeof root.${type}>({
 	namespace: '${type}',
 	provider: { org: '${org}', type: '${type}', version: '${version}' },
-})
+}) as typeof root.${type}
 `
 )
