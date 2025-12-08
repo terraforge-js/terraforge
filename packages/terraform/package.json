@@ -1,0 +1,37 @@
+{
+	"name": "@terraforge/terraform",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"build-package": "./cli/build-package.ts"
+	},
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"scripts": {
+		"build": "bunup src/index.ts --format esm --dts --clean --target node --packages external --out-dir ./dist",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@grpc/grpc-js": "1.12.6",
+		"@grpc/proto-loader": "^0.7.13",
+		"@terraforge/core": "workspace:*",
+		"change-case": "^5.4.4",
+		"jszip": "^3.10.1",
+		"msgpackr": "^1.11.0",
+		"semver": "^7.7.1"
+	},
+	"devDependencies": {
+		"@types/semver": "^7.7.0"
+	},
+	"files": [
+		"dist"
+	],
+	"license": "MIT"
+}

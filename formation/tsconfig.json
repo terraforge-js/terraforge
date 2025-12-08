@@ -7,6 +7,7 @@
 		"esModuleInterop": true,
 		"strictNullChecks": true,
 		"noUncheckedIndexedAccess": true,
+		"allowImportingTsExtensions": true,
 		"moduleResolution": "node",
 		"declaration": true,
 		"sourceMap": true

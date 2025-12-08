@@ -1,199 +1,72 @@
-var __defProp = Object.defineProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
+// src/formation/node.ts
+var isNode = (obj) => {
+  return "$" in obj && typeof obj.$ === "object" && obj.$ !== null && "tag" in obj.$ && typeof obj.$.tag === "string";
+};
+var isResource = (obj) => {
+  return isNode(obj) && obj.$.tag === "resource";
+};
+var isDataSource = (obj) => {
+  return isNode(obj) && obj.$.tag === "data";
 };
 
-// src/core/node.ts
-var Node = class {
-  // private parent: Node
-  constructor(parent, type, identifier) {
+// src/formation/group.ts
+var Group = class _Group {
+  constructor(parent, type, name) {
     this.parent = parent;
     this.type = type;
-    this.identifier = identifier;
+    this.name = name;
     parent?.children.push(this);
   }
   children = [];
-  localTags = {};
   get urn() {
-    return `${this.parent ? this.parent.urn : "urn"}:${this.type}:{${this.identifier}}`;
+    const urn = this.parent ? this.parent.urn : "urn";
+    return `${urn}:${this.type}:{${this.name}}`;
   }
-  get tags() {
-    return {
-      ...this.parent?.tags ?? {},
-      ...this.localTags
-    };
-  }
-  setTag(name, value) {
-    if (typeof name === "string") {
-      this.localTags[name] = value;
-    } else {
-      Object.assign(this.localTags, name);
+  addChild(child) {
+    if (isNode(child)) {
+      const duplicate = this.children.filter((c) => isResource(c)).find((c) => c.$.type === child.$.type && c.$.logicalId === child.$.logicalId);
+      if (duplicate) {
+        throw new Error(`Duplicate node found: ${child.$.type}:${child.$.logicalId}`);
+      }
     }
-    return this;
-  }
-  getTag(name) {
-    return this.localTags[name];
-  }
-  removeTag(name) {
-    delete this.localTags[name];
-  }
-  // get parent() {
-  // 	return this.parental
-  // }
-  // get children() {
-  // 	return this.childs
-  // }
-  // add(...nodes: Node[]) {
-  // 	for (const node of nodes) {
-  // 		if (node.parental) {
-  // 			throw new Error(`Node already has a parent: ${node.urn}`)
-  // 		}
-  // 		node.parental = this
-  // 		for (const child of this.childs) {
-  // 			if (child.urn === node.urn) {
-  // 				throw new Error(`Duplicate nodes detected: ${node.urn}`)
-  // 			}
-  // 		}
-  // 		this.childs.add(node)
-  // 	}
-  // }
-};
-var flatten = (node) => {
-  const list = [node];
-  for (const child of node.children) {
-    list.push(...flatten(child));
-  }
-  return list;
-};
-
-// src/core/app.ts
-var App = class extends Node {
-  // private exported: ExportedData = {}
-  // private listeners = new Set<(data: ExportedData) => void>()
-  constructor(name) {
-    super(void 0, "App", name);
-    this.name = name;
-  }
-  get stacks() {
-    return this.children;
-  }
-  // add(stack: Stack) {
-  // 	if (stack instanceof Stack) {
-  // 		return super.add(stack)
-  // 	}
-  // 	throw new TypeError('You can only add stacks to an app')
-  // }
-  // import<T>(stack: string, key: string) {
-  // 	return new Output<T>([], resolve => {
-  // 		const get = (data: ExportedData) => {
-  // 			if (typeof data[stack]?.[key] !== 'undefined') {
-  // 				resolve(data[stack]?.[key] as T)
-  // 				this.listeners.delete(get)
-  // 			}
-  // 		}
-  // 		this.listeners.add(get)
-  // 		get(this.exported)
-  // 	})
-  // }
-  // setExportedData(stackName: string, data: ExportedData[string]) {
-  // 	this.exported[stackName] = data
-  // 	for (const listener of this.listeners) {
-  // 		listener(this.exported)
-  // 	}
-  // }
-};
-
-// src/core/asset.ts
-import { readFile } from "fs/promises";
-var Asset = class {
-  static fromJSON(json) {
-    return new StringAsset(JSON.stringify(json));
-  }
-  static fromString(string, encoding = "utf8") {
-    return new StringAsset(string, encoding);
-  }
-  static fromFile(path) {
-    return new FileAsset(path);
-  }
-  static fromRemote(url) {
-    return new RemoteAsset(url);
-  }
-};
-var StringAsset = class extends Asset {
-  constructor(value, encoding = "utf8") {
-    super();
-    this.value = value;
-    this.encoding = encoding;
-  }
-  async load() {
-    return Buffer.from(this.value, this.encoding);
-  }
-};
-var FileAsset = class extends Asset {
-  constructor(path) {
-    super();
-    this.path = path;
-  }
-  async load() {
-    return readFile(this.path);
-  }
-};
-var RemoteAsset = class extends Asset {
-  constructor(url) {
-    super();
-    this.url = url;
-  }
-  async load() {
-    const response = await fetch(this.url);
-    const data = await response.arrayBuffer();
-    return Buffer.from(data);
-  }
-};
-
-// src/core/error.ts
-var ResourceError = class _ResourceError extends Error {
-  constructor(urn, type, id, operation, message) {
-    super(message);
-    this.urn = urn;
-    this.type = type;
-    this.id = id;
-    this.operation = operation;
-  }
-  static wrap(urn, type, id, operation, error) {
-    if (error instanceof Error) {
-      return new _ResourceError(urn, type, id, operation, error.message);
+    if (child instanceof _Group) {
+      const duplicate = this.children.filter((c) => c instanceof _Group).find((c) => c.type === child.type && c.name === child.name);
+      if (duplicate) {
+        throw new Error(`Duplicate group found: ${child.type}:${child.name}`);
+      }
     }
-    return new _ResourceError(urn, type, id, operation, "Unknown Error");
+    this.children.push(child);
   }
-};
-var AppError = class extends Error {
-  constructor(app, issues, message) {
-    super(message);
-    this.app = app;
-    this.issues = issues;
+  add(...children) {
+    for (const child of children) {
+      this.addChild(child);
+    }
   }
-};
-var StackError = class extends Error {
-  constructor(stack, issues, message) {
-    super(message);
-    this.stack = stack;
-    this.issues = issues;
+  get nodes() {
+    return this.children.map((child) => {
+      if (child instanceof _Group) {
+        return child.nodes;
+      }
+      if (isNode(child)) {
+        return child;
+      }
+      return;
+    }).flat().filter((child) => !!child);
   }
-};
-var ResourceNotFound = class extends Error {
-};
-var ResourceAlreadyExists = class extends Error {
+  get resources() {
+    return this.nodes.filter((node) => isResource(node));
+  }
+  get dataSources() {
+    return this.nodes.filter((node) => isDataSource(node));
+  }
 };
 
-// src/core/stack.ts
-var Stack = class extends Node {
+// src/formation/stack.ts
+var Stack = class extends Group {
   constructor(app, name) {
-    super(app, "Stack", name);
+    super(app, "stack", name);
     this.app = app;
-    this.name = name;
   }
-  exported = {};
   dependencies = /* @__PURE__ */ new Set();
   dependsOn(...stacks) {
     for (const stack of stacks) {
@@ -204,146 +77,100 @@ var Stack = class extends Node {
     }
     return this;
   }
-  get resources() {
-    return flatten(this).filter((node) => node instanceof Resource);
+};
+var findParentStack = (group) => {
+  if (group instanceof Stack) {
+    return group;
   }
-  // export(key: string, value: Input<unknown>) {
-  // 	this.exported[key] = value
-  // 	return this
-  // }
-  // import<T>(key: string): Input<T> {
-  // 	if (key in this.exported) {
-  // 		return this.exported[key] as Input<T>
-  // 	}
-  // 	throw new ImportValueNotFound(this.name, key)
-  // }
+  if (!group.parent) {
+    throw new Error("No stack found");
+  }
+  return findParentStack(group.parent);
 };
 
-// src/core/resource.ts
-var Resource = class extends Node {
-  constructor(parent, type, identifier, inputs, requiredDocumentFields = []) {
-    super(parent, type, identifier);
-    this.parent = parent;
-    this.type = type;
-    this.identifier = identifier;
-    this.requiredDocumentFields = requiredDocumentFields;
-    if (inputs) {
-      this.registerDependency(inputs);
-    }
-    if (typeof inputs === "object" && inputs !== null && "tags" in inputs && typeof inputs.tags === "object" && inputs.tags !== null) {
-      this.setTag(inputs.tags);
-    }
+// src/formation/app.ts
+var App = class extends Group {
+  constructor(name) {
+    super(void 0, "app", name);
+    this.name = name;
   }
-  remoteDocument;
-  listeners = /* @__PURE__ */ new Set();
-  dependencies = /* @__PURE__ */ new Set();
-  deletionPolicy = "before-deployment";
-  get stack() {
-    let current = this;
-    while (current) {
-      const parent = current.parent;
-      if (parent instanceof Stack) {
-        return parent;
-      }
-      current = parent;
-    }
-    throw new Error(`Resource stack can't be found`);
-  }
-  // set deletionPolicy(policy: ResourceDeletionPolicy) {
-  // 	this.resourcePolicies?.deletionPolicy policy
-  // }
-  // get deletionPolicy() {
-  // 	return this.resourcePolicies?.deletionPolicy ?? 'before-deployment'
-  // }
-  dependsOn(...resources) {
-    for (const resource of resources) {
-      if (resource.stack === this.stack) {
-        this.dependencies.add(resource);
-      } else {
-        this.stack.dependsOn(resource.stack);
-      }
-    }
-    return this;
-  }
-  registerDependency(props) {
-    this.dependsOn(...findResources(props));
-  }
-  setRemoteDocument(remoteDocument) {
-    for (const listener of this.listeners) {
-      listener(remoteDocument);
-    }
-    this.listeners.clear();
-    this.remoteDocument = remoteDocument;
-  }
-  output(getter) {
-    return new Output([this], (resolve) => {
-      if (this.remoteDocument) {
-        resolve(getter(this.remoteDocument));
-      } else {
-        this.listeners.add((remoteDocument) => {
-          resolve(getter(remoteDocument));
-        });
-      }
-    });
-  }
-  attr(name, input, transform) {
-    const value = unwrap(input);
-    if (typeof value === "undefined") {
-      return {};
-    }
-    const definedValue = value;
-    return {
-      [name]: transform ? transform(definedValue) : definedValue
-    };
+  get stacks() {
+    return this.children.filter((child) => child instanceof Stack);
   }
 };
 
-// src/core/output.ts
-var Output = class _Output {
-  constructor(resources, cb) {
-    this.resources = resources;
-    cb((value) => {
-      if (!this.resolved) {
-        this.value = value;
-        this.resolved = true;
-        for (const listener of this.listeners) {
-          listener(value);
-        }
-      } else {
-        throw new Error(`Output values can only be resolved once.`);
-      }
-    });
+// src/formation/future.ts
+var IDLE = 0;
+var PENDING = 1;
+var RESOLVED = 2;
+var REJECTED = 3;
+var Future = class _Future {
+  constructor(callback) {
+    this.callback = callback;
   }
-  // protected resources = new Set<Resource>()
-  // protected deps = new Set<Resource>()
   listeners = /* @__PURE__ */ new Set();
-  value;
-  resolved = false;
-  apply(cb) {
-    return new _Output(this.resources, (resolve) => {
-      if (!this.resolved) {
-        this.listeners.add(async (value) => {
-          resolve(await cb(value));
-        });
-      } else {
-        cb(this.value);
-      }
+  status = IDLE;
+  data;
+  error;
+  get [Symbol.toStringTag]() {
+    switch (this.status) {
+      case IDLE:
+        return `<idle>`;
+      case PENDING:
+        return `<pending>`;
+      case RESOLVED:
+        return `${this.data}`;
+      case REJECTED:
+        return `<rejected> ${this.error}`;
+    }
+  }
+  pipe(cb) {
+    return new _Future((resolve2, reject) => {
+      this.then((value) => {
+        Promise.resolve(cb(value)).then((value2) => {
+          resolve2(value2);
+        }).catch(reject);
+      }, reject);
     });
   }
-  valueOf() {
-    if (!this.resolved) {
-      throw new TypeError(`Output hasn't been resolved yet.`);
+  then(resolve2, reject) {
+    if (this.status === RESOLVED) {
+      resolve2(this.data);
+    } else if (this.status === REJECTED) {
+      reject?.(this.error);
+    } else {
+      this.listeners.add({ resolve: resolve2, reject });
+      if (this.status === IDLE) {
+        this.status = PENDING;
+        this.callback(
+          (data) => {
+            if (this.status === PENDING) {
+              this.status = RESOLVED;
+              this.data = data;
+              this.listeners.forEach(({ resolve: resolve3 }) => resolve3(data));
+              this.listeners.clear();
+            }
+          },
+          (error) => {
+            if (this.status === PENDING) {
+              this.status = REJECTED;
+              this.error = error;
+              this.listeners.forEach(({ reject: reject2 }) => reject2?.(error));
+              this.listeners.clear();
+            }
+          }
+        );
+      }
     }
-    return this.value;
   }
 };
-var findResources = (props) => {
-  const resources = [];
+
+// src/formation/input.ts
+var findInputDeps = (props) => {
+  const deps = [];
   const find = (props2) => {
     if (props2 instanceof Output) {
-      resources.push(...props2.resources);
-    } else if (props2 instanceof Resource) {
-      resources.push(props2);
+      deps.push(...props2.dependencies);
     } else if (Array.isArray(props2)) {
       props2.map(find);
     } else if (props2?.constructor === Object) {
@@ -351,85 +178,270 @@ var findResources = (props) => {
     }
   };
   find(props);
-  return resources;
+  return deps;
 };
-var combine = (inputs) => {
-  return new Output(findResources(inputs), (resolve) => {
-    let count = inputs.length;
-    const done = () => {
-      if (--count === 0) {
-        resolve(inputs.map(unwrap));
-      }
-    };
-    for (const input of inputs) {
-      if (input instanceof Output) {
-        input.apply(done);
-      } else {
-        done();
-      }
+var resolveInputs = async (inputs) => {
+  const unresolved = [];
+  const find = (props, parent, key) => {
+    if (props instanceof Output || props instanceof Future || props instanceof Promise) {
+      unresolved.push([parent, key]);
+    } else if (Array.isArray(props)) {
+      props.map((value, index) => find(value, props, index));
+    } else if (props?.constructor === Object) {
+      Object.entries(props).map(([key2, value]) => find(value, props, key2));
     }
-  });
-};
-function unwrap(input, defaultValue) {
-  if (typeof input === "undefined") {
-    return defaultValue;
-  }
-  if (input instanceof Output) {
-    return input.valueOf();
-  }
-  return input;
-}
-
-// src/core/workspace/workspace.ts
-import { randomUUID } from "crypto";
-import promiseLimit from "p-limit";
-import { run } from "promise-dag";
-
-// src/core/workspace/asset.ts
-var loadAssets = async (assets) => {
-  const resolved = {};
-  const hashes = {};
-  await Promise.all(
-    Object.entries(assets).map(async ([name, asset]) => {
-      if (asset instanceof Output) {
-        asset = unwrap(asset);
-      }
-      if (asset instanceof Asset) {
-        const data = await asset.load();
-        const buff = await crypto.subtle.digest("SHA-256", data);
-        const hash = Buffer.from(buff).toString("hex");
-        hashes[name] = hash;
-        resolved[name] = {
-          data,
-          hash
-        };
-      }
+  };
+  find(inputs, {}, "root");
+  const responses = await Promise.all(
+    unresolved.map(async ([obj, key]) => {
+      const promise = obj[key];
+      let timeout;
+      const response = await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => {
+            if (promise instanceof Output) {
+              reject(
+                new Error(
+                  `Resolving Output<${[...promise.dependencies].map((d) => d.urn).join(", ")}> took too long.`
+                )
+              );
+            } else if (promise instanceof Future) {
+              reject(new Error("Resolving Future took too long."));
+            } else {
+              reject(new Error("Resolving Promise took too long."));
+            }
+          }, 3e3);
+        })
+      ]);
+      clearTimeout(timeout);
+      return response;
     })
   );
-  return [resolved, hashes];
-};
-var resolveDocumentAssets = (document, assets) => {
-  if (document !== null && typeof document === "object") {
-    for (const [key, value] of Object.entries(document)) {
-      if (value !== null && typeof value === "object" && "__ASSET__" in value && typeof value.__ASSET__ === "string") {
-        document[key] = assets[value.__ASSET__]?.data.toString("utf8");
-      } else {
-        resolveDocumentAssets(value, assets);
-      }
-    }
-  } else if (Array.isArray(document)) {
-    for (const value of document) {
-      resolveDocumentAssets(value, assets);
-    }
-  }
-  return document;
+  unresolved.forEach(([props, key], i) => {
+    props[key] = responses[i];
+  });
+  return inputs;
 };
 
-// src/core/workspace/document.ts
-var cloneObject = (document, replacer) => {
-  return JSON.parse(JSON.stringify(document, replacer));
+// src/formation/output.ts
+var Output = class _Output extends Future {
+  constructor(dependencies, callback) {
+    super(callback);
+    this.dependencies = dependencies;
+  }
+  pipe(cb) {
+    return new _Output(this.dependencies, (resolve2, reject) => {
+      this.then((value) => {
+        Promise.resolve(cb(value)).then((value2) => {
+          resolve2(value2);
+        }).catch(reject);
+      }, reject);
+    });
+  }
 };
-var compareDocuments = (left, right) => {
+var deferredOutput = (cb) => {
+  return new Output(/* @__PURE__ */ new Set(), cb);
+};
+var output = (value) => {
+  return deferredOutput((resolve2) => resolve2(value));
+};
+var combine = (...inputs) => {
+  const deps = new Set(findInputDeps(inputs));
+  return new Output(deps, (resolve2, reject) => {
+    Promise.all(inputs).then((result) => {
+      resolve2(result);
+    }, reject);
+  });
+};
+var resolve = (inputs, transformer) => {
+  return combine(...inputs).pipe((data) => {
+    return transformer(...data);
+  });
+};
+var interpolate = (literals, ...placeholders) => {
+  return combine(...placeholders).pipe((unwrapped) => {
+    const result = [];
+    for (let i = 0; i < unwrapped.length; i++) {
+      result.push(literals[i], unwrapped[i]);
+    }
+    result.push(literals.at(-1));
+    return result.join("");
+  });
+};
+
+// src/formation/debug.ts
+var enabled = false;
+var enableDebug = () => {
+  enabled = true;
+};
+var createDebugger = (group) => {
+  return (...args) => {
+    if (!enabled) {
+      return;
+    }
+    console.log();
+    console.log(`${group}:`, ...args);
+    console.log();
+  };
+};
+
+// src/formation/workspace/exit.ts
+import asyncOnExit from "async-on-exit";
+var listeners = /* @__PURE__ */ new Set();
+var listening = false;
+var onExit = (cb) => {
+  listeners.add(cb);
+  if (!listening) {
+    listening = true;
+    asyncOnExit(async () => {
+      await Promise.allSettled([...listeners].map((cb2) => cb2()));
+    }, true);
+  }
+  return () => {
+    listeners.delete(cb);
+    if (listeners.size === 0) {
+      listening = false;
+      asyncOnExit.dispose();
+    }
+  };
+};
+
+// src/formation/workspace/lock.ts
+var lockApp = async (lockBackend, app, fn) => {
+  let releaseLock;
+  try {
+    releaseLock = await lockBackend.lock(app.urn);
+  } catch (error) {
+    throw new Error(`Already in progress: ${app.urn}`);
+  }
+  const releaseExit = onExit(async () => {
+    await releaseLock();
+  });
+  let result;
+  try {
+    result = await fn();
+  } catch (error) {
+    throw error;
+  } finally {
+    await releaseLock();
+    releaseExit();
+  }
+  return result;
+};
+
+// src/formation/workspace/concurrency.ts
+import promiseLimit from "p-limit";
+var concurrencyQueue = (concurrency) => {
+  const queue = promiseLimit(concurrency);
+  return (cb) => {
+    return queue(cb);
+  };
+};
+
+// src/formation/workspace/dependency.ts
+import { DirectedGraph } from "graphology";
+import { topologicalGenerations, willCreateCycle } from "graphology-dag";
+
+// src/formation/workspace/entries.ts
+var entries = (object) => {
+  return Object.entries(object);
+};
+
+// src/formation/workspace/dependency.ts
+var DependencyGraph = class {
+  graph = new DirectedGraph();
+  callbacks = /* @__PURE__ */ new Map();
+  add(urn, deps, callback) {
+    this.callbacks.set(urn, callback);
+    this.graph.mergeNode(urn);
+    for (const dep of deps) {
+      if (willCreateCycle(this.graph, dep, urn)) {
+        throw new Error(`There is a circular dependency between ${urn} -> ${dep}`);
+      }
+      this.graph.mergeEdge(dep, urn);
+    }
+  }
+  validate() {
+    const nodes = this.graph.nodes();
+    for (const urn of nodes) {
+      if (!this.callbacks.has(urn)) {
+        const deps = this.graph.filterNodes((node) => {
+          return this.graph.areNeighbors(node, urn);
+        });
+        throw new Error(`The following resources ${deps.join(", ")} have a missing dependency: ${urn}`);
+      }
+    }
+  }
+  async run() {
+    this.validate();
+    const graph = topologicalGenerations(this.graph);
+    const errors = [];
+    for (const list of graph) {
+      const result = await Promise.allSettled(
+        list.map((urn) => {
+          const callback = this.callbacks.get(urn);
+          if (!callback) {
+            return;
+          }
+          return callback();
+        })
+      );
+      for (const entry of result) {
+        if (entry.status === "rejected") {
+          if (entry.reason instanceof Error) {
+            errors.push(entry.reason);
+          } else {
+            errors.push(new Error(`Unknown error: ${entry.reason}`));
+          }
+        }
+      }
+      if (errors.length > 0) {
+        break;
+      }
+    }
+    return errors;
+  }
+};
+var dependentsOn = (resources, dependency) => {
+  const dependents = [];
+  for (const [urn, resource] of entries(resources)) {
+    if (resource.dependencies.includes(dependency)) {
+      dependents.push(urn);
+    }
+  }
+  return dependents;
+};
+
+// src/formation/workspace/error.ts
+var ResourceError = class _ResourceError extends Error {
+  constructor(urn, type, operation, message) {
+    super(message);
+    this.urn = urn;
+    this.type = type;
+    this.operation = operation;
+  }
+  static wrap(urn, type, operation, error) {
+    if (error instanceof Error) {
+      return new _ResourceError(urn, type, operation, error.message);
+    }
+    return new _ResourceError(urn, type, operation, "Unknown Error");
+  }
+};
+var AppError = class extends Error {
+  constructor(app, issues, message) {
+    super(message);
+    this.app = app;
+    this.issues = issues;
+  }
+};
+var ResourceNotFound = class extends Error {
+};
+var ResourceAlreadyExists = class extends Error {
+};
+
+// src/formation/workspace/state.ts
+var compareState = (left, right) => {
   const replacer = (_, value) => {
     if (value !== null && value instanceof Object && !Array.isArray(value)) {
       return Object.keys(value).sort().reduce((sorted, key) => {
@@ -443,6318 +455,641 @@ var compareDocuments = (left, right) => {
   const r = JSON.stringify(right, replacer);
   return l === r;
 };
-
-// src/core/workspace/lock.ts
-var lockApp = async (lockProvider, app, fn) => {
-  let release;
-  try {
-    release = await lockProvider.lock(app.urn);
-  } catch (error) {
-    throw new Error(`Already in progress: ${app.urn}`);
-  }
-  const cleanupAndExit = async () => {
-    await release();
-    process.exit(0);
-  };
-  process.on("SIGTERM", cleanupAndExit);
-  process.on("SIGINT", cleanupAndExit);
-  let result;
-  try {
-    result = await fn();
-  } catch (error) {
-    throw error;
-  } finally {
-    await release();
-  }
-  return result;
-};
-
-// src/core/workspace/output.ts
-var unwrapOutputs = (urn, document) => {
-  const replacer = (_, value) => {
-    if (value instanceof Output) {
-      return value.valueOf();
+var removeEmptyStackStates = (appState) => {
+  for (const [stackUrn, stackState] of entries(appState.stacks)) {
+    if (Object.keys(stackState.nodes).length === 0) {
+      delete appState.stacks[stackUrn];
     }
-    if (typeof value === "bigint") {
-      return Number(value);
-    }
-    return value;
-  };
-  try {
-    return cloneObject(document, replacer);
-  } catch (error) {
-    if (error instanceof TypeError) {
-      throw new TypeError(`Resource has unresolved inputs: ${urn}`);
-    }
-    throw error;
   }
 };
 
-// src/core/workspace/provider.ts
-var getCloudProvider = (cloudProviders, providerId) => {
-  for (const provider of cloudProviders) {
-    if (provider.own(providerId)) {
+// src/formation/workspace/state/v1.ts
+var v1 = (oldAppState) => {
+  const stacks = {};
+  for (const [urn, stack] of entries(oldAppState.stacks)) {
+    const nodes = {};
+    for (const [urn2, resource] of entries(stack.resources)) {
+      nodes[urn2] = {
+        ...resource,
+        tag: "resource"
+      };
+    }
+    stacks[urn] = {
+      name: stack.name,
+      dependencies: stack.dependencies,
+      nodes
+    };
+  }
+  return {
+    ...oldAppState,
+    stacks,
+    version: 1
+  };
+};
+
+// src/formation/workspace/state/v2.ts
+var v2 = (oldAppState) => {
+  const stacks = {};
+  for (const [urn, stack] of entries(oldAppState.stacks)) {
+    stacks[urn] = {
+      name: stack.name,
+      nodes: stack.nodes
+    };
+  }
+  return {
+    ...oldAppState,
+    stacks,
+    version: 2
+  };
+};
+
+// src/formation/workspace/state/migrate.ts
+var versions = [
+  [1, v1],
+  [2, v2]
+];
+var migrateAppState = (oldState) => {
+  const version = "version" in oldState && oldState.version || 0;
+  for (const [v, migrate] of versions) {
+    if (v > version) {
+      oldState = migrate(oldState);
+    }
+  }
+  return oldState;
+};
+
+// src/formation/provider.ts
+var findProvider = (providers, id) => {
+  for (const provider of providers) {
+    if (provider.ownResource(id)) {
       return provider;
     }
   }
-  throw new TypeError(`Can't find the "${providerId}" cloud provider.`);
+  throw new TypeError(`Can't find the "${id}" provider.`);
 };
 
-// src/core/workspace/token.ts
+// src/formation/workspace/token.ts
 import { v5 } from "uuid";
 var createIdempotantToken = (appToken, urn, operation) => {
   return v5(`${urn}-${operation}`, appToken);
 };
 
-// src/core/workspace/workspace.ts
+// src/formation/workspace/procedure/delete-resource.ts
+var debug = createDebugger("Delete");
+var deleteResource = async (appToken, urn, state, opt) => {
+  debug(state.type);
+  debug(state);
+  if (state.lifecycle?.retainOnDelete) {
+    debug("retain", state.type);
+    return;
+  }
+  const idempotantToken = createIdempotantToken(appToken, urn, "delete");
+  const provider = findProvider(opt.providers, state.provider);
+  try {
+    await provider.deleteResource({
+      type: state.type,
+      state: state.output,
+      idempotantToken
+    });
+  } catch (error) {
+    if (error instanceof ResourceNotFound) {
+      debug(state.type, "already deleted");
+    } else {
+      throw ResourceError.wrap(urn, state.type, "delete", error);
+    }
+  }
+};
+
+// src/formation/workspace/procedure/delete-app.ts
+var deleteApp = async (app, opt) => {
+  const latestState = await opt.backend.state.get(app.urn);
+  if (!latestState) {
+    throw new AppError(app.name, [], `App already deleted: ${app.name}`);
+  }
+  const appState = migrateAppState(latestState);
+  if (opt.idempotentToken || !appState.idempotentToken) {
+    appState.idempotentToken = opt.idempotentToken ?? crypto.randomUUID();
+    await opt.backend.state.update(app.urn, appState);
+  }
+  let stackStates = Object.values(appState.stacks);
+  if (opt.filters && opt.filters.length > 0) {
+    stackStates = stackStates.filter((stackState) => opt.filters.includes(stackState.name));
+  }
+  const queue = concurrencyQueue(opt.concurrency ?? 10);
+  const graph = new DependencyGraph();
+  const allNodes = {};
+  for (const stackState of Object.values(appState.stacks)) {
+    for (const [urn, nodeState] of entries(stackState.nodes)) {
+      allNodes[urn] = nodeState;
+    }
+  }
+  for (const stackState of stackStates) {
+    for (const [urn, state] of entries(stackState.nodes)) {
+      graph.add(urn, dependentsOn(allNodes, urn), async () => {
+        if (state.tag === "resource") {
+          await queue(() => deleteResource(appState.idempotentToken, urn, state, opt));
+        }
+        delete stackState.nodes[urn];
+      });
+    }
+  }
+  const errors = await graph.run();
+  removeEmptyStackStates(appState);
+  delete appState.idempotentToken;
+  await opt.backend.state.update(app.urn, appState);
+  if (errors.length > 0) {
+    throw new AppError(app.name, [...new Set(errors)], "Deleting app failed.");
+  }
+  if (Object.keys(appState.stacks).length === 0) {
+    await opt.backend.state.delete(app.urn);
+  }
+};
+
+// src/formation/workspace/replacement.ts
+import { get } from "get-wild";
+var requiresReplacement = (priorState, proposedState, replaceOnChanges) => {
+  for (const path of replaceOnChanges) {
+    const priorValue = get(priorState, path);
+    const proposedValue = get(proposedState, path);
+    if (path.includes("*") && Array.isArray(priorValue)) {
+      for (let i = 0; i < priorValue.length; i++) {
+        if (!compareState(priorValue[i], proposedValue[i])) {
+          return true;
+        }
+      }
+    }
+    if (!compareState(priorValue, proposedValue)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// src/formation/workspace/procedure/create-resource.ts
+var debug2 = createDebugger("Create");
+var createResource = async (resource, appToken, input, opt) => {
+  const provider = findProvider(opt.providers, resource.$.provider);
+  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "create");
+  debug2(resource.$.type);
+  debug2(input);
+  let result;
+  try {
+    result = await provider.createResource({
+      type: resource.$.type,
+      state: input,
+      idempotantToken
+    });
+  } catch (error) {
+    throw ResourceError.wrap(resource.$.urn, resource.$.type, "create", error);
+  }
+  return {
+    tag: "resource",
+    version: result.version,
+    type: resource.$.type,
+    provider: resource.$.provider,
+    input: resource.$.input,
+    output: result.state
+  };
+};
+
+// src/formation/workspace/procedure/get-data-source.ts
+var debug3 = createDebugger("Data Source");
+var getDataSource = async (dataSource, input, opt) => {
+  const provider = findProvider(opt.providers, dataSource.provider);
+  debug3(dataSource.type);
+  if (!provider.getData) {
+    throw new Error(`Provider doesn't support data sources`);
+  }
+  let result;
+  try {
+    result = await provider.getData({
+      type: dataSource.type,
+      state: input
+    });
+  } catch (error) {
+    throw ResourceError.wrap(dataSource.urn, dataSource.type, "get", error);
+  }
+  return {
+    tag: "data",
+    type: dataSource.type,
+    provider: dataSource.provider,
+    input,
+    output: result.state
+  };
+};
+
+// src/formation/workspace/procedure/import-resource.ts
+var debug4 = createDebugger("Import");
+var importResource = async (resource, input, opt) => {
+  const provider = findProvider(opt.providers, resource.$.provider);
+  debug4(resource.$.type);
+  debug4(input);
+  let result;
+  try {
+    result = await provider.getResource({
+      type: resource.$.type,
+      state: {
+        ...input,
+        id: resource.$.config?.import
+      }
+    });
+  } catch (error) {
+    throw ResourceError.wrap(resource.$.urn, resource.$.type, "import", error);
+  }
+  return {
+    tag: "resource",
+    version: result.version,
+    type: resource.$.type,
+    provider: resource.$.provider,
+    input: resource.$.input,
+    output: result.state
+  };
+};
+
+// src/formation/workspace/procedure/replace-resource.ts
+var debug5 = createDebugger("Replace");
+var replaceResource = async (resource, appToken, priorState, proposedState, opt) => {
+  const urn = resource.$.urn;
+  const type = resource.$.type;
+  const provider = findProvider(opt.providers, resource.$.provider);
+  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "replace");
+  debug5(resource.$.type);
+  debug5(proposedState);
+  if (resource.$.config?.retainOnDelete) {
+    debug5("retain", type);
+  } else {
+    try {
+      await provider.deleteResource({
+        type,
+        state: priorState,
+        idempotantToken
+      });
+    } catch (error) {
+      if (error instanceof ResourceNotFound) {
+        debug5(type, "already deleted");
+      } else {
+        throw ResourceError.wrap(urn, type, "replace", error);
+      }
+    }
+  }
+  let result;
+  try {
+    result = await provider.createResource({
+      type,
+      state: proposedState,
+      idempotantToken
+    });
+  } catch (error) {
+    throw ResourceError.wrap(urn, type, "replace", error);
+  }
+  return {
+    version: result.version,
+    output: result.state
+  };
+};
+
+// src/formation/workspace/procedure/update-resource.ts
+var debug6 = createDebugger("Update");
+var updateResource = async (resource, appToken, priorState, proposedState, opt) => {
+  const provider = findProvider(opt.providers, resource.$.provider);
+  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "update");
+  let result;
+  debug6(resource.$.type);
+  debug6(proposedState);
+  try {
+    result = await provider.updateResource({
+      type: resource.$.type,
+      priorState,
+      proposedState,
+      idempotantToken
+    });
+  } catch (error) {
+    throw ResourceError.wrap(resource.$.urn, resource.$.type, "update", error);
+  }
+  return {
+    version: result.version,
+    output: result.state
+  };
+};
+
+// src/formation/workspace/procedure/deploy-app.ts
+var debug7 = createDebugger("Deploy App");
+var deployApp = async (app, opt) => {
+  debug7(app.name, "start");
+  const latestState = await opt.backend.state.get(app.urn);
+  const appState = migrateAppState(
+    latestState ?? {
+      name: app.name,
+      stacks: {}
+    }
+  );
+  const releaseOnExit = onExit(async () => {
+    await opt.backend.state.update(app.urn, appState);
+  });
+  if (opt.idempotentToken || !appState.idempotentToken) {
+    appState.idempotentToken = opt.idempotentToken ?? crypto.randomUUID();
+    await opt.backend.state.update(app.urn, appState);
+  }
+  let stacks = app.stacks;
+  let filteredOutStacks = [];
+  if (opt.filters && opt.filters.length > 0) {
+    stacks = app.stacks.filter((stack) => opt.filters.includes(stack.name));
+    filteredOutStacks = app.stacks.filter((stack) => !opt.filters.includes(stack.name));
+  }
+  const queue = concurrencyQueue(opt.concurrency ?? 10);
+  const graph = new DependencyGraph();
+  const allNodes = {};
+  for (const stackState of Object.values(appState.stacks)) {
+    for (const [urn, nodeState] of entries(stackState.nodes)) {
+      allNodes[urn] = nodeState;
+    }
+  }
+  for (const stack of filteredOutStacks) {
+    const stackState = appState.stacks[stack.urn];
+    if (stackState) {
+      for (const node of stack.nodes) {
+        const nodeState = stackState.nodes[node.$.urn];
+        if (nodeState && nodeState.output) {
+          graph.add(node.$.urn, [], async () => {
+            debug7("hydrate", node.$.urn);
+            node.$.resolve(nodeState.output);
+          });
+        }
+      }
+    }
+  }
+  for (const [urn, stackState] of entries(appState.stacks)) {
+    const found = app.stacks.find((stack) => {
+      return stack.urn === urn;
+    });
+    const filtered = opt.filters ? opt.filters.find((filter) => filter === stackState.name) : true;
+    if (!found && filtered) {
+      for (const [urn2, nodeState] of entries(stackState.nodes)) {
+        graph.add(urn2, dependentsOn(allNodes, urn2), async () => {
+          if (nodeState.tag === "resource") {
+            await queue(
+              () => deleteResource(
+                //
+                appState.idempotentToken,
+                urn2,
+                nodeState,
+                opt
+              )
+            );
+          }
+          delete stackState.nodes[urn2];
+        });
+      }
+    }
+  }
+  for (const stack of stacks) {
+    const stackState = appState.stacks[stack.urn] = appState.stacks[stack.urn] ?? {
+      name: stack.name,
+      nodes: {}
+    };
+    for (const [urn, nodeState] of entries(stackState.nodes)) {
+      const resource = stack.nodes.find((r) => r.$.urn === urn);
+      if (!resource) {
+        graph.add(urn, dependentsOn(allNodes, urn), async () => {
+          if (nodeState.tag === "resource") {
+            await queue(
+              () => deleteResource(
+                //
+                appState.idempotentToken,
+                urn,
+                nodeState,
+                opt
+              )
+            );
+          }
+          delete stackState.nodes[urn];
+        });
+      }
+    }
+    for (const node of stack.nodes) {
+      const dependencies = [...node.$.dependencies];
+      const partialNewResourceState = {
+        dependencies,
+        lifecycle: isResource(node) ? {
+          // deleteAfterCreate: node.$.config?.deleteAfterCreate,
+          retainOnDelete: node.$.config?.retainOnDelete
+        } : void 0
+      };
+      graph.add(node.$.urn, dependencies, () => {
+        return queue(async () => {
+          let nodeState = stackState.nodes[node.$.urn];
+          let input;
+          try {
+            input = await resolveInputs(node.$.input);
+          } catch (error) {
+            throw ResourceError.wrap(
+              //
+              node.$.urn,
+              node.$.type,
+              "resolve",
+              error
+            );
+          }
+          if (isDataSource(node)) {
+            if (!nodeState) {
+              const dataSourceState = await getDataSource(node.$, input, opt);
+              nodeState = stackState.nodes[node.$.urn] = {
+                ...dataSourceState,
+                ...partialNewResourceState
+              };
+            } else if (!compareState(nodeState.input, input)) {
+              const dataSourceState = await getDataSource(node.$, input, opt);
+              Object.assign(nodeState, {
+                ...dataSourceState,
+                ...partialNewResourceState
+              });
+            } else {
+              Object.assign(nodeState, partialNewResourceState);
+            }
+          }
+          if (isResource(node)) {
+            if (!nodeState) {
+              if (node.$.config?.import) {
+                const importedState = await importResource(node, input, opt);
+                const newResourceState = await updateResource(
+                  node,
+                  appState.idempotentToken,
+                  importedState.output,
+                  input,
+                  opt
+                );
+                nodeState = stackState.nodes[node.$.urn] = {
+                  ...importedState,
+                  ...newResourceState,
+                  ...partialNewResourceState
+                };
+              } else {
+                const newResourceState = await createResource(
+                  node,
+                  appState.idempotentToken,
+                  input,
+                  opt
+                );
+                nodeState = stackState.nodes[node.$.urn] = {
+                  ...newResourceState,
+                  ...partialNewResourceState
+                };
+              }
+            } else if (
+              // --------------------------------------------------
+              // Check if any state has changed
+              !compareState(nodeState.input, input)
+            ) {
+              let newResourceState;
+              if (requiresReplacement(nodeState.input, input, node.$.config?.replaceOnChanges ?? [])) {
+                newResourceState = await replaceResource(
+                  node,
+                  appState.idempotentToken,
+                  nodeState.output,
+                  input,
+                  opt
+                );
+              } else {
+                newResourceState = await updateResource(
+                  node,
+                  appState.idempotentToken,
+                  nodeState.output,
+                  input,
+                  opt
+                );
+              }
+              Object.assign(nodeState, {
+                input,
+                ...newResourceState,
+                ...partialNewResourceState
+              });
+            } else {
+              Object.assign(nodeState, partialNewResourceState);
+            }
+          }
+          if (nodeState?.output) {
+            node.$.resolve(nodeState.output);
+          }
+        });
+      });
+    }
+  }
+  const errors = await graph.run();
+  removeEmptyStackStates(appState);
+  delete appState.idempotentToken;
+  await opt.backend.state.update(app.urn, appState);
+  releaseOnExit();
+  debug7(app.name, "done");
+  if (errors.length > 0) {
+    throw new AppError(app.name, [...new Set(errors)], "Deploying app failed.");
+  }
+  if (Object.keys(appState.stacks).length === 0) {
+    await opt.backend.state.delete(app.urn);
+  }
+  return appState;
+};
+
+// src/formation/workspace/procedure/hydrate.ts
+var hydrate = async (app, opt) => {
+  const appState = await opt.backend.state.get(app.urn);
+  if (appState) {
+    for (const stack of app.stacks) {
+      const stackState = appState.stacks[stack.urn];
+      if (stackState) {
+        for (const node of stack.nodes) {
+          const nodeState = stackState.nodes[node.$.urn];
+          if (nodeState && nodeState.output) {
+            node.$.resolve(nodeState.output);
+          }
+        }
+      }
+    }
+  }
+};
+
+// src/formation/workspace/workspace.ts
 var WorkSpace = class {
   constructor(props) {
     this.props = props;
   }
-  // private getExportedData(appState: AppState) {
-  // 	const data: ExportedData = {}
-  // 	for (const stackData of Object.values(appState.stacks)) {
-  // 		data[stackData.name] = stackData.exports
-  // 	}
-  // 	return data
-  // }
-  runGraph(stack, graph) {
-    try {
-      const promises = run(graph);
-      return Promise.allSettled(Object.values(promises));
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new StackError(stack, [], error.message);
-      }
-      throw error;
-    }
-  }
-  // getStackApp(stack: Stack) {
-  // 	const app = stack.parent
-  // 	if (!app || !(app instanceof App)) {
-  // 		throw new StackError(stack.name, [], 'Stack must belong to an App')
-  // 	}
-  // 	return app
-  // }
-  // async deployStack(stack: Stack, app: App) {
-  // 	return lockApp(this.props.lockProvider, app, async () => {})
-  // }
-  async deployApp(app, opt = {}) {
-    return lockApp(this.props.lockProvider, app, async () => {
-      const appState = await this.props.stateProvider.get(app.urn) ?? {
-        name: app.name,
-        stacks: {}
-      };
-      if (opt.token || !appState.token) {
-        appState.token = opt.token ?? randomUUID();
-        await this.props.stateProvider.update(app.urn, appState);
-      }
-      let stacks = app.stacks;
-      let filteredOutStacks = [];
-      if (opt.filters && opt.filters.length > 0) {
-        stacks = app.stacks.filter((stack) => opt.filters.includes(stack.name));
-        filteredOutStacks = app.stacks.filter((stack) => !opt.filters.includes(stack.name));
-      }
-      const limit = promiseLimit(this.props.concurrency ?? 10);
-      const graph = {};
-      for (const stack of filteredOutStacks) {
-        graph[stack.urn] = [
-          async () => {
-            const stackState = appState.stacks[stack.urn];
-            if (stackState) {
-              for (const resource of stack.resources) {
-                const resourceState = stackState.resources[resource.urn];
-                if (resourceState) {
-                  resource.setRemoteDocument(resourceState.remote);
-                }
-              }
-            }
-          }
-        ];
-      }
-      for (const stack of stacks) {
-        graph[stack.urn] = [
-          ...[...stack.dependencies].map((dep) => dep.urn),
-          async () => {
-            const resources = stack.resources;
-            const stackState = appState.stacks[stack.urn] = appState.stacks[stack.urn] ?? {
-              name: stack.name,
-              // exports: {},
-              dependencies: [],
-              resources: {}
-            };
-            const deleteResourcesBefore = {};
-            const deleteResourcesAfter = {};
-            for (const [urnStr, state] of Object.entries(stackState.resources)) {
-              const urn = urnStr;
-              const resource = resources.find((r) => r.urn === urn);
-              if (!resource) {
-                if (state.policies.deletion === "before-deployment") {
-                  deleteResourcesBefore[urn] = state;
-                }
-                if (state.policies.deletion === "after-deployment") {
-                  deleteResourcesAfter[urn] = state;
-                }
-              }
-            }
-            if (Object.keys(deleteResourcesBefore).length > 0) {
-              await this.deleteStackResources(app.urn, appState, stackState, deleteResourcesBefore, limit);
-            }
-            await this.deployStackResources(app.urn, appState, stackState, resources, limit);
-            if (Object.keys(deleteResourcesAfter).length > 0) {
-              await this.deleteStackResources(app.urn, appState, stackState, deleteResourcesAfter, limit);
-            }
-            stackState.dependencies = [...stack.dependencies].map((d) => d.urn);
-          }
-        ];
-      }
-      for (const [_urn, stackState] of Object.entries(appState.stacks)) {
-        const urn = _urn;
-        const found = app.stacks.find((stack) => {
-          return stack.urn === urn;
-        });
-        const filtered = opt.filters ? opt.filters.find((filter) => filter === stackState.name) : true;
-        if (!found && filtered) {
-          graph[urn] = [
-            ...this.dependentsOn(appState.stacks, urn),
-            async () => {
-              await this.deleteStackResources(app.urn, appState, stackState, stackState.resources, limit);
-              delete appState.stacks[urn];
-            }
-          ];
-        }
-      }
-      const results = await Promise.allSettled(Object.values(run(graph)));
-      delete appState.token;
-      await this.props.stateProvider.update(app.urn, appState);
-      const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
-      if (errors.length > 0) {
-        throw new AppError(app.name, [...new Set(errors)], "Deploying app failed.");
-      }
-      return appState;
-    });
-  }
-  async deleteApp(app, opt = {}) {
-    return lockApp(this.props.lockProvider, app, async () => {
-      const appState = await this.props.stateProvider.get(app.urn);
-      if (!appState) {
-        throw new AppError(app.name, [], `App already deleted: ${app.name}`);
-      }
-      if (opt.token || !appState.token) {
-        appState.token = opt.token ?? randomUUID();
-        await this.props.stateProvider.update(app.urn, appState);
-      }
-      let stacks = Object.entries(appState.stacks);
-      if (opt.filters && opt.filters.length > 0) {
-        stacks = stacks.filter(([_, stack]) => opt.filters.includes(stack.name));
-      }
-      const limit = promiseLimit(this.props.concurrency ?? 10);
-      const graph = {};
-      for (const [_urn, stackState] of stacks) {
-        const urn = _urn;
-        graph[urn] = [
-          ...this.dependentsOn(appState.stacks, urn),
-          async () => {
-            await this.deleteStackResources(app.urn, appState, stackState, stackState.resources, limit);
-            delete appState.stacks[urn];
-          }
-        ];
-      }
-      const results = await Promise.allSettled(Object.values(run(graph)));
-      delete appState.token;
-      await this.props.stateProvider.update(app.urn, appState);
-      const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
-      if (errors.length > 0) {
-        throw new AppError(app.name, [...new Set(errors)], "Deleting app failed.");
-      }
-      if (Object.keys(appState.stacks).length === 0) {
-        await this.props.stateProvider.delete(app.urn);
+  deploy(app, options = {}) {
+    return lockApp(this.props.backend.lock, app, async () => {
+      try {
+        await deployApp(app, { ...this.props, ...options });
+      } finally {
+        await this.destroyProviders();
       }
     });
   }
-  async hydrate(app) {
-    const appState = await this.props.stateProvider.get(app.urn);
-    if (appState) {
-      for (const stack of app.stacks) {
-        const stackState = appState.stacks[stack.urn];
-        if (stackState) {
-          for (const resource of stack.resources) {
-            const resourceState = stackState.resources[resource.urn];
-            if (resourceState) {
-              resource.setRemoteDocument(resourceState.remote);
-            }
-          }
-        }
+  delete(app, options = {}) {
+    return lockApp(this.props.backend.lock, app, async () => {
+      try {
+        await deleteApp(app, { ...this.props, ...options });
+      } finally {
+        await this.destroyProviders();
       }
-    }
+    });
   }
-  // async diffStack(stack: Stack) {
-  // 	const app = this.getStackApp(stack)
-  // 	const appState = (await this.props.stateProvider.get(app.urn)) ?? {
-  // 		name: app.name,
-  // 		stacks: {},
-  // 	}
-  // 	app.setExportedData(this.getExportedData(appState))
-  // 	const stackState: StackState = appState.stacks[stack.urn] ?? {
-  // 		name: stack.name,
-  // 		exports: {},
-  // 		resources: {},
-  // 	}
-  // 	const resources = stack.resources
-  // 	const creates: URN[] = []
-  // 	const updates: URN[] = []
-  // 	const deletes: URN[] = []
-  // 	for (const resource of resources) {
-  // 		const resourceState = stackState.resources[resource.urn]
-  // 		if (resourceState) {
-  // 			resource.setRemoteDocument(resourceState.remote)
-  // 		}
-  // 	}
-  // 	for (const urn of Object.keys(stackState.resources)) {
-  // 		const resource = resources.find(r => r.urn === urn)
-  // 		if (!resource) {
-  // 			deletes.push(urn as URN)
-  // 		}
-  // 	}
-  // 	for (const resource of resources) {
-  // 		const resourceState = stackState.resources[resource.urn]
-  // 		if (resourceState) {
-  // 			const state = resource.toState()
-  // 			const [_, assetHashes] = await loadAssets(state.assets ?? {})
-  // 			const document = unwrapOutputsFromDocument(resource.urn, state.document ?? {})
-  // 			if (
-  // 				!compareDocuments(
-  // 					//
-  // 					[resourceState.local, resourceState.assets],
-  // 					[document, assetHashes]
-  // 				)
-  // 			) {
-  // 				updates.push(resource.urn)
+  hydrate(app) {
+    return hydrate(app, this.props);
+  }
+  // protected resolveDeps(app: App) {
+  // 	// ------------------------------------------------------------------------------
+  // 	// Link the input dependencies to our resource if they are in the same stack.
+  // 	// If the resource is coming from a different stack we will let our stack depend
+  // 	// ------------------------------------------------------------------------------
+  // 	for (const resource of app.resources) {
+  // 		const deps = findInputDeps(resource.$.input)
+  // 		for (const dep of deps) {
+  // 			if (dep.tag === 'resource') {
+  // 				if (dep.stack.urn === resource.$.stack.urn) {
+  // 					resource.$.dependencies.add(dep.urn)
+  // 				} else {
+  // 					resource.$.stack.dependsOn(dep.stack)
+  // 				}
+  // 			} else {
+  // 				resource.$.dataSourceMetas.add(dep)
   // 			}
-  // 		} else {
-  // 			creates.push(resource.urn)
   // 		}
   // 	}
-  // 	return {
-  // 		changes: creates.length + updates.length + deletes.length,
-  // 		creates,
-  // 		updates,
-  // 		deletes,
-  // 	}
   // }
-  async getRemoteResource(props) {
-    let remote;
-    try {
-      remote = await props.provider.get(props);
-    } catch (error) {
-      throw ResourceError.wrap(props.urn, props.type, props.id, "get", error);
-    }
-    return remote;
-  }
-  async deployStackResources(_appUrn, appState, stackState, resources, limit) {
-    await this.healFromUnknownRemoteState(stackState);
-    const deployGraph = {};
-    for (const resource of resources) {
-      const provider = getCloudProvider(this.props.cloudProviders, resource.cloudProviderId);
-      deployGraph[resource.urn] = [
-        ...[...resource.dependencies].map((dep) => dep.urn),
-        () => limit(async () => {
-          const state = resource.toState();
-          const [assets, assetHashes] = await loadAssets(state.assets ?? {});
-          const document = unwrapOutputs(resource.urn, state.document ?? {});
-          const extra = unwrapOutputs(resource.urn, state.extra ?? {});
-          let resourceState = stackState.resources[resource.urn];
-          if (!resourceState) {
-            const token = createIdempotantToken(appState.token, resource.urn, "create");
-            let id;
-            try {
-              id = await provider.create({
-                urn: resource.urn,
-                type: resource.type,
-                document: resolveDocumentAssets(cloneObject(document), assets),
-                assets,
-                extra,
-                token
-              });
-            } catch (error) {
-              throw ResourceError.wrap(resource.urn, resource.type, void 0, "create", error);
-            }
-            resourceState = stackState.resources[resource.urn] = {
-              id,
-              type: resource.type,
-              provider: resource.cloudProviderId,
-              local: document,
-              assets: assetHashes,
-              dependencies: [...resource.dependencies].map((d) => d.urn),
-              extra,
-              policies: {
-                deletion: resource.deletionPolicy
-              }
-            };
-            const remote = await this.getRemoteResource({
-              id,
-              urn: resource.urn,
-              type: resource.type,
-              document,
-              // assets,
-              extra,
-              provider
-            });
-            resourceState.remote = remote;
-          } else if (
-            // Check if any state has changed
-            !compareDocuments(
-              //
-              [resourceState.local, resourceState.assets],
-              [document, assetHashes]
-            )
-          ) {
-            const token = createIdempotantToken(appState.token, resource.urn, "update");
-            let id;
-            try {
-              id = await provider.update({
-                urn: resource.urn,
-                id: resourceState.id,
-                type: resource.type,
-                remoteDocument: resolveDocumentAssets(cloneObject(resourceState.remote), assets),
-                oldDocument: resolveDocumentAssets(cloneObject(resourceState.local), {}),
-                newDocument: resolveDocumentAssets(cloneObject(document), assets),
-                requiredDocumentFields: resource.requiredDocumentFields,
-                oldAssets: resourceState.assets,
-                newAssets: assets,
-                extra,
-                token
-              });
-            } catch (error) {
-              if (error instanceof ResourceNotFound) {
-                try {
-                  id = await provider.create({
-                    urn: resource.urn,
-                    type: resource.type,
-                    document: resolveDocumentAssets(cloneObject(document), assets),
-                    assets,
-                    extra,
-                    token
-                  });
-                } catch (error2) {
-                  throw ResourceError.wrap(
-                    resource.urn,
-                    resource.type,
-                    resourceState.id,
-                    "update",
-                    error2
-                  );
-                }
-              } else {
-                throw ResourceError.wrap(
-                  resource.urn,
-                  resource.type,
-                  resourceState.id,
-                  "update",
-                  error
-                );
-              }
-            }
-            resourceState.id = id;
-            resourceState.local = document;
-            resourceState.assets = assetHashes;
-            const remote = await this.getRemoteResource({
-              id,
-              urn: resource.urn,
-              type: resource.type,
-              document,
-              // assets,
-              extra,
-              provider
-            });
-            resourceState.remote = remote;
-          }
-          resourceState.extra = extra;
-          resourceState.dependencies = [...resource.dependencies].map((d) => d.urn);
-          resourceState.policies.deletion = resource.deletionPolicy;
-          resource.setRemoteDocument(resourceState.remote);
-        })
-      ];
-    }
-    const results = await this.runGraph(stackState.name, deployGraph);
-    const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
-    if (errors.length > 0) {
-      throw new StackError(stackState.name, [...new Set(errors)], "Deploying resources failed.");
-    }
-  }
-  dependentsOn(resources, dependency) {
-    const dependents = [];
-    for (const [urn, resource] of Object.entries(resources)) {
-      if (resource.dependencies.includes(dependency)) {
-        dependents.push(urn);
-      }
-    }
-    return dependents;
-  }
-  async deleteStackResources(_appUrn, appState, stackState, resources, limit) {
-    const deleteGraph = {};
-    for (const [urnStr, state] of Object.entries(resources)) {
-      const urn = urnStr;
-      const provider = getCloudProvider(this.props.cloudProviders, state.provider);
-      const token = createIdempotantToken(appState.token, urn, "delete");
-      deleteGraph[urn] = [
-        ...this.dependentsOn(resources, urn),
-        () => limit(async () => {
-          if (state.policies.deletion !== "retain") {
-            try {
-              await provider.delete({
-                urn,
-                id: state.id,
-                type: state.type,
-                document: state.local,
-                assets: state.assets,
-                extra: state.extra,
-                token
-              });
-            } catch (error) {
-              if (error instanceof ResourceNotFound) {
-              } else {
-                throw ResourceError.wrap(urn, state.type, state.id, "delete", error);
-              }
-            }
-          }
-          delete stackState.resources[urn];
-        })
-      ];
-    }
-    const results = await this.runGraph(stackState.name, deleteGraph);
-    const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
-    if (errors.length > 0) {
-      throw new StackError(appState.name, [...new Set(errors)], "Deleting resources failed.");
-    }
-  }
-  async healFromUnknownRemoteState(stackState) {
-    const results = await Promise.allSettled(
-      Object.entries(stackState.resources).map(async ([urnStr, resourceState]) => {
-        const urn = urnStr;
-        if (typeof resourceState.remote === "undefined") {
-          const provider = getCloudProvider(this.props.cloudProviders, resourceState.provider);
-          const remote = await this.getRemoteResource({
-            urn,
-            id: resourceState.id,
-            type: resourceState.type,
-            document: resourceState.local,
-            // assets: resourceState.assets,
-            extra: resourceState.extra,
-            provider
-          });
-          if (typeof remote === "undefined") {
-            throw new ResourceError(
-              urn,
-              resourceState.type,
-              resourceState.id,
-              "heal",
-              `Fetching remote state returned undefined`
-            );
-          }
-          resourceState.remote = remote;
-        }
-      })
-    );
-    const errors = results.filter((r) => r.status === "rejected").map((r) => r.reason);
-    if (errors.length > 0) {
-      throw new StackError(stackState.name, [...new Set(errors)], "Healing remote state failed.");
-    }
-  }
-};
-
-// src/provider/aws/index.ts
-var aws_exports = {};
-__export(aws_exports, {
-  acm: () => acm_exports,
-  apiGatewayV2: () => api_gateway_v2_exports,
-  appsync: () => appsync_exports,
-  autoScaling: () => auto_scaling_exports,
-  cloudControlApi: () => cloud_control_api_exports,
-  cloudFront: () => cloud_front_exports,
-  cloudWatch: () => cloud_watch_exports,
-  cognito: () => cognito_exports,
-  createCloudProviders: () => createCloudProviders,
-  dynamodb: () => dynamodb_exports,
-  ec2: () => ec2_exports,
-  ecr: () => ecr_exports,
-  ecs: () => ecs_exports,
-  elb: () => elb_exports,
-  events: () => events_exports,
-  iam: () => iam_exports,
-  iot: () => iot_exports,
-  ivs: () => ivs_exports,
-  lambda: () => lambda_exports,
-  memorydb: () => memorydb_exports,
-  openSearch: () => open_search_exports,
-  openSearchServerless: () => serverless_exports,
-  route53: () => route53_exports,
-  s3: () => s3_exports,
-  ses: () => ses_exports,
-  sns: () => sns_exports,
-  sqs: () => sqs_exports
-});
-
-// src/provider/aws/acm/index.ts
-var acm_exports = {};
-__export(acm_exports, {
-  Certificate: () => Certificate,
-  CertificateProvider: () => CertificateProvider,
-  CertificateValidation: () => CertificateValidation,
-  CertificateValidationProvider: () => CertificateValidationProvider
-});
-
-// src/provider/aws/acm/certificate-provider.ts
-import {
-  ACMClient,
-  DeleteCertificateCommand,
-  DescribeCertificateCommand,
-  RequestCertificateCommand,
-  ResourceNotFoundException
-} from "@aws-sdk/client-acm";
-
-// src/core/hash.ts
-import { createHash } from "crypto";
-var sha256 = (data) => {
-  return createHash("sha256").update(JSON.stringify(data)).digest("hex");
-};
-var sleep = (delay) => {
-  return new Promise((r) => setTimeout(r, delay));
-};
-
-// src/provider/aws/acm/certificate-provider.ts
-var CertificateProvider = class {
-  constructor(props) {
-    this.props = props;
-  }
-  clients = {};
-  own(id) {
-    return id === "aws-acm-certificate";
-  }
-  wait(delay) {
-    return new Promise((r) => setTimeout(r, delay));
-  }
-  client(region = this.props.region) {
-    if (!this.clients[region]) {
-      this.clients[region] = new ACMClient({
-        ...this.props,
-        region
-      });
-    }
-    return this.clients[region];
-  }
-  async get({ id, extra }) {
-    const client = this.client(extra.region);
-    while (true) {
-      const result = await client.send(
-        new DescribeCertificateCommand({
-          CertificateArn: id
-        })
-      );
-      if (result.Certificate?.DomainValidationOptions?.at(0)?.ResourceRecord) {
-        return result.Certificate;
-      }
-      await this.wait(5e3);
-    }
-  }
-  async create({ urn, document, extra }) {
-    const token = sha256(urn).substring(0, 32);
-    const result = await this.client(extra.region).send(
-      new RequestCertificateCommand({
-        IdempotencyToken: token,
-        ...document
-      })
-    );
-    return result.CertificateArn;
-  }
-  async update() {
-    throw new Error(`Certificate can't be changed`);
-    return "";
-  }
-  async delete({ id, extra }) {
-    try {
-      await this.client(extra.region).send(
-        new DeleteCertificateCommand({
-          CertificateArn: id
-        })
-      );
-    } catch (error) {
-      if (error instanceof ResourceNotFoundException) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/acm/certificate-validation-provider.ts
-import { ACMClient as ACMClient2, DescribeCertificateCommand as DescribeCertificateCommand2 } from "@aws-sdk/client-acm";
-var CertificateValidationProvider = class {
-  constructor(props) {
-    this.props = props;
-  }
-  clients = {};
-  own(id) {
-    return id === "aws-acm-certificate-validation";
-  }
-  client(region = this.props.region) {
-    if (!this.clients[region]) {
-      this.clients[region] = new ACMClient2({
-        ...this.props,
-        region
-      });
-    }
-    return this.clients[region];
-  }
-  wait(delay) {
-    return new Promise((r) => setTimeout(r, delay));
-  }
-  async get({ id, document }) {
-    const client = this.client(document.Region);
-    while (true) {
-      const result = await client.send(
-        new DescribeCertificateCommand2({
-          CertificateArn: id
-        })
-      );
-      switch (result.Certificate?.Status) {
-        case "EXPIRED":
-          throw new Error(`Certificate is expired`);
-        case "INACTIVE":
-          throw new Error(`Certificate is inactive`);
-        case "FAILED":
-          throw new Error(`Certificate validation failed`);
-        case "VALIDATION_TIMED_OUT":
-          throw new Error(`Certificate validation timed out`);
-        case "REVOKED":
-          throw new Error(`Certificate revoked`);
-        case "ISSUED":
-          return result.Certificate;
-      }
-      await this.wait(5e3);
-    }
-  }
-  async create({ document }) {
-    return document.CertificateArn;
-  }
-  async update({ newDocument }) {
-    return newDocument.CertificateArn;
-  }
-  async delete() {
-  }
-};
-
-// src/provider/aws/acm/certificate-validation.ts
-var CertificateValidation = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CertificateManager::CertificateValidation", id, props);
-    this.parent = parent;
-    this.props = props;
-    this.deletionPolicy = "retain";
-  }
-  cloudProviderId = "aws-acm-certificate-validation";
-  get arn() {
-    return this.output((v) => v.CertificateArn);
-  }
-  toState() {
-    return {
-      document: {
-        Region: this.props.region,
-        CertificateArn: this.props.certificateArn
-      }
-    };
-  }
-};
-
-// src/provider/aws/acm/certificate.ts
-var Certificate = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CertificateManager::Certificate", id, props);
-    this.parent = parent;
-    this.props = props;
-    this.deletionPolicy = "after-deployment";
-  }
-  cloudProviderId = "aws-acm-certificate";
-  validation;
-  get arn() {
-    return this.output((v) => v.CertificateArn);
-  }
-  get issuer() {
-    return this.output((v) => v.Issuer);
-  }
-  validationRecord(index) {
-    return this.output((v) => {
-      const record = v.DomainValidationOptions.at(index).ResourceRecord;
-      return {
-        name: record.Name,
-        type: record.Type,
-        records: [record.Value]
-      };
-    });
-  }
-  get validationRecords() {
-    return this.output(
-      (v) => v.DomainValidationOptions.map((opt) => {
-        const record = opt.ResourceRecord;
-        return {
-          name: record.Name,
-          type: record.Type,
-          records: [record.Value]
-        };
-      })
-    );
-  }
-  get issuedArn() {
-    if (!this.validation) {
-      this.validation = new CertificateValidation(this, "validation", {
-        certificateArn: this.arn,
-        region: this.props.region
-      });
-    }
-    return this.validation.arn;
-  }
-  toState() {
-    return {
-      extra: {
-        region: this.props.region
-      },
-      document: {
-        DomainName: this.props.domainName,
-        ...this.props.alternativeNames ? {
-          SubjectAlternativeNames: unwrap(this.props.alternativeNames, [])
-        } : {},
-        ValidationMethod: unwrap(this.props.validationMethod, "dns").toUpperCase(),
-        KeyAlgorithm: unwrap(this.props.keyAlgorithm, "RSA_2048"),
-        ...this.props.validationOptions ? {
-          DomainValidationOptions: unwrap(this.props.validationOptions).map((v) => unwrap(v)).map((options) => ({
-            DomainName: options.domainName,
-            ValidationDomain: options.validationDomain
-            // HostedZoneId: options.hostedZoneId,
-            // HostedZoneId: 'Z0157889170MJQ0XTIRZD',
-          }))
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/api-gateway-v2/index.ts
-var api_gateway_v2_exports = {};
-__export(api_gateway_v2_exports, {
-  Api: () => Api,
-  ApiMapping: () => ApiMapping,
-  DomainName: () => DomainName,
-  Integration: () => Integration,
-  IntegrationProvider: () => IntegrationProvider,
-  Route: () => Route,
-  Stage: () => Stage,
-  StageProvider: () => StageProvider
-});
-
-// src/provider/aws/cloud-control-api/resource.ts
-var CloudControlApiResource = class extends Resource {
-  cloudProviderId = "aws-cloud-control-api";
-  // readonly
-  // protected _region: string | undefined
-  // get region() {
-  // 	return this._region
-  // }
-  // setRegion(region: string) {
-  // 	this._region = region
-  // 	return this
-  // }
-};
-
-// src/provider/aws/api-gateway-v2/api-mapping.ts
-var ApiMapping = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::ApiMapping", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.ApiMappingId);
-  }
-  toState() {
-    return {
-      document: {
-        DomainName: this.props.domainName,
-        ApiId: this.props.apiId,
-        Stage: this.props.stage
-      }
-    };
-  }
-};
-
-// src/provider/aws/api-gateway-v2/api.ts
-import { toSeconds } from "@awsless/duration";
-var Api = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::Api", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get endpoint() {
-    return this.output((v) => v.ApiEndpoint);
-  }
-  get id() {
-    return this.output((v) => v.ApiId);
-  }
-  toState() {
-    const cors = unwrap(this.props.cors, {});
-    const allow = unwrap(cors.allow, {});
-    const expose = unwrap(cors.expose, {});
-    return {
-      document: {
-        Name: this.props.name,
-        ProtocolType: this.props.protocolType,
-        ...this.attr("Description", this.props.description),
-        CorsConfiguration: {
-          ...this.attr("AllowCredentials", allow.credentials),
-          ...this.attr("AllowHeaders", allow.headers),
-          ...this.attr("AllowMethods", allow.methods),
-          ...this.attr("AllowOrigins", allow.origins),
-          ...this.attr("ExposeHeaders", expose.headers),
-          ...this.attr("MaxAge", cors.maxAge, toSeconds)
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-control-api/index.ts
-var cloud_control_api_exports = {};
-__export(cloud_control_api_exports, {
-  CloudControlApiProvider: () => CloudControlApiProvider,
-  CloudControlApiResource: () => CloudControlApiResource
-});
-
-// src/provider/aws/cloud-control-api/provider.ts
-import {
-  CloudControlClient,
-  CreateResourceCommand,
-  DeleteResourceCommand,
-  GetResourceCommand,
-  GetResourceRequestStatusCommand,
-  ResourceNotFoundException as ResourceNotFoundException2,
-  ThrottlingException,
-  UpdateResourceCommand
-} from "@aws-sdk/client-cloudcontrol";
-import { minutes, toMilliSeconds } from "@awsless/duration";
-import { backOff } from "exponential-backoff";
-import objectPath from "object-path";
-import { createPatch } from "rfc6902";
-var CloudControlApiProvider = class {
-  constructor(props) {
-    this.props = props;
-    this.client = new CloudControlClient({
-      maxAttempts: 10,
-      requestHandler: {
-        httpsAgent: {
-          maxSockets: 10,
-          maxTotalSockets: 10
-        }
-      },
-      ...props
-    });
-  }
-  client;
-  own(id) {
-    return id === "aws-cloud-control-api";
-  }
-  async send(command) {
-    return backOff(
-      () => {
-        return this.client.send(command);
-      },
-      {
-        numOfAttempts: 20,
-        maxDelay: 1e3 * 10,
-        retry(error) {
-          if (error instanceof ThrottlingException) {
-            console.log("ThrottlingException");
-            return true;
-          }
-          return false;
-        }
-      }
-    );
-  }
-  async progressStatus(event) {
-    const token = event.RequestToken;
-    const start = /* @__PURE__ */ new Date();
-    const timeout = Number(toMilliSeconds(this.props.timeout ?? minutes(1)));
-    while (true) {
-      if (event.OperationStatus === "SUCCESS") {
-        if (event.Identifier) {
-          return event.Identifier;
-        } else {
-          throw new Error(`AWS Cloud Control API Identifier not set for SUCCESS status.`);
-        }
-      }
-      if (event.OperationStatus === "FAILED") {
-        if (event.ErrorCode === "AlreadyExists") {
-          if (event.Identifier) {
-            return event.Identifier;
-          }
-        }
-        if (event.ErrorCode === "NotFound") {
-          throw new ResourceNotFound(event.StatusMessage);
-        }
-        throw new Error(`[${event.ErrorCode}] ${event.StatusMessage}`);
-      }
-      const now = Date.now();
-      const elapsed = now - start.getTime();
-      if (elapsed > timeout) {
-        throw new Error("AWS Cloud Control API operation timeout.");
-      }
-      const after = event.RetryAfter?.getTime() ?? 0;
-      const delay = Math.max(after - now, 1e3);
-      await sleep(delay);
-      const status = await this.client.send(
-        new GetResourceRequestStatusCommand({
-          RequestToken: token
-        })
-      );
-      event = status.ProgressEvent;
-    }
-  }
-  updateOperations(remoteDocument, oldDocument, newDocument, requiredFields = []) {
-    const removeWriteOnlyProps = (remote, old) => {
-      for (const key in old) {
-        if (!remote || typeof remote[key] === "undefined") {
-          delete old[key];
-          continue;
-        }
-        if (old[key] && typeof old[key] === "object") {
-          removeWriteOnlyProps(remote[key], old[key]);
-        }
-      }
-    };
-    removeWriteOnlyProps(remoteDocument, oldDocument);
-    for (const field of requiredFields) {
-      objectPath.del(oldDocument, field);
-    }
-    const operations = createPatch(oldDocument, newDocument);
-    return operations;
-  }
-  // private updateOperations(_remoteDocument: any, _oldDocument: ResourceDocument, newDocument: ResourceDocument) {
-  // 	return createPatch({}, newDocument)
-  // }
-  async get({ id, type }) {
-    const result = await this.client.send(
-      new GetResourceCommand({
-        TypeName: type,
-        Identifier: id
-      })
-    );
-    return JSON.parse(result.ResourceDescription.Properties);
-  }
-  async create({ token, type, document }) {
-    const result = await this.send(
-      new CreateResourceCommand({
-        TypeName: type,
-        DesiredState: JSON.stringify(document),
-        ClientToken: token
-      })
-    );
-    return this.progressStatus(result.ProgressEvent);
-  }
-  async update({
-    token,
-    type,
-    id,
-    oldDocument,
-    newDocument,
-    remoteDocument,
-    requiredDocumentFields = []
-  }) {
-    let result;
-    try {
-      result = await this.send(
-        new UpdateResourceCommand({
-          TypeName: type,
-          Identifier: id,
-          PatchDocument: JSON.stringify(
-            this.updateOperations(remoteDocument, oldDocument, newDocument, requiredDocumentFields)
-          ),
-          ClientToken: token
-        })
-      );
-    } catch (error) {
-      if (error instanceof ResourceNotFoundException2) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-    return this.progressStatus(result.ProgressEvent);
-  }
-  async delete({ token, type, id }) {
-    const result = await this.send(
-      new DeleteResourceCommand({
-        TypeName: type,
-        Identifier: id,
-        ClientToken: token
-      })
-    );
-    await this.progressStatus(result.ProgressEvent);
-  }
-};
-
-// src/provider/aws/api-gateway-v2/domain-name.ts
-var DomainName = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::DomainName", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.DomainName);
-  }
-  get regionalDomainName() {
-    return this.output((v) => v.RegionalDomainName);
-  }
-  get regionalHostedZoneId() {
-    return this.output((v) => v.RegionalHostedZoneId);
-  }
-  toState() {
-    return {
-      document: {
-        DomainName: this.props.name,
-        DomainNameConfigurations: unwrap(this.props.certificates).map((v) => unwrap(v)).map((item) => ({
-          ...this.attr("CertificateArn", item.certificateArn),
-          ...this.attr("CertificateName", item.certificateName),
-          ...this.attr("EndpointType", item.endpointType),
-          ...this.attr("SecurityPolicy", item.securityPolicy)
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/api-gateway-v2/integration-provider.ts
-import {
-  ApiGatewayV2Client,
-  NotFoundException,
-  CreateIntegrationCommand,
-  UpdateIntegrationCommand,
-  DeleteIntegrationCommand,
-  GetIntegrationCommand
-} from "@aws-sdk/client-apigatewayv2";
-var IntegrationProvider = class {
-  client;
-  constructor(props) {
-    this.client = new ApiGatewayV2Client(props);
-  }
-  own(id) {
-    return id === "aws-api-gateway-v2-integration";
-  }
-  async get({ id, document }) {
-    const result = await this.client.send(
-      new GetIntegrationCommand({
-        ApiId: document.ApiId,
-        IntegrationId: id
-      })
-    );
-    return result;
-  }
-  async create({ document }) {
-    const result = await this.client.send(new CreateIntegrationCommand(document));
-    return result.IntegrationId;
-  }
-  async update({ id, oldDocument, newDocument }) {
-    if (oldDocument.ApiId !== newDocument.ApiId) {
-      throw new Error(`Integration can't change the api id`);
-    }
-    const result = await this.client.send(
-      new UpdateIntegrationCommand({
-        ...newDocument,
-        IntegrationId: id
-      })
-    );
-    return result.IntegrationId;
-  }
-  async delete({ id, document }) {
-    try {
-      await this.client.send(
-        new DeleteIntegrationCommand({
-          ApiId: document.ApiId,
-          IntegrationId: id
-        })
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/api-gateway-v2/integration.ts
-var Integration = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::Integration", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-api-gateway-v2-integration";
-  get id() {
-    return this.output((v) => v.IntegrationId);
-  }
-  toState() {
-    return {
-      document: {
-        ApiId: this.props.apiId,
-        IntegrationType: this.props.type,
-        IntegrationUri: this.props.uri,
-        IntegrationMethod: this.props.method,
-        PayloadFormatVersion: unwrap(this.props.payloadFormatVersion, "2.0"),
-        ...this.attr("Description", this.props.description)
-      }
-    };
-  }
-};
-
-// src/provider/aws/api-gateway-v2/route.ts
-var Route = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::Route", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.RouteId);
-  }
-  toState() {
-    return {
-      document: {
-        ApiId: this.props.apiId,
-        RouteKey: this.props.routeKey,
-        Target: this.props.target
-      }
-    };
-  }
-};
-
-// src/provider/aws/api-gateway-v2/stage-provider.ts
-import {
-  ApiGatewayV2Client as ApiGatewayV2Client2,
-  CreateStageCommand,
-  DeleteStageCommand,
-  GetStageCommand,
-  UpdateStageCommand,
-  NotFoundException as NotFoundException2
-} from "@aws-sdk/client-apigatewayv2";
-var StageProvider = class {
-  client;
-  constructor(props) {
-    this.client = new ApiGatewayV2Client2(props);
-  }
-  own(id) {
-    return id === "aws-api-gateway-v2-stage";
-  }
-  async get({ document }) {
-    const result = await this.client.send(
-      new GetStageCommand({
-        ApiId: document.ApiId,
-        StageName: document.StageName
-      })
-    );
-    return result;
-  }
-  async create({ document }) {
-    const result = await this.client.send(new CreateStageCommand(document));
-    return result.StageName;
-  }
-  async update({ oldDocument, newDocument }) {
-    if (oldDocument.ApiId !== newDocument.ApiId) {
-      throw new Error(`Stage can't change the api id`);
-    }
-    if (oldDocument.StageName !== newDocument.StageName) {
-      throw new Error(`Stage can't change the stage name`);
-    }
-    const result = await this.client.send(new UpdateStageCommand(newDocument));
-    return result.StageName;
-  }
-  async delete({ document }) {
-    try {
-      await this.client.send(
-        new DeleteStageCommand({
-          ApiId: document.ApiId,
-          StageName: document.StageName
-        })
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException2) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/api-gateway-v2/stage.ts
-var Stage = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ApiGatewayV2::Stage", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-api-gateway-v2-stage";
-  get id() {
-    return this.output((v) => v.StageId);
-  }
-  get name() {
-    return this.output((v) => v.StageName);
-  }
-  toState() {
-    return {
-      document: {
-        ApiId: this.props.apiId,
-        StageName: this.props.name,
-        AutoDeploy: unwrap(this.props.autoDeploy, true),
-        ...this.attr("DeploymentId", this.props.deploymentId),
-        ...this.attr("Description", this.props.description)
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/index.ts
-var appsync_exports = {};
-__export(appsync_exports, {
-  DataSource: () => DataSource,
-  DataSourceProvider: () => DataSourceProvider,
-  DomainName: () => DomainName2,
-  DomainNameApiAssociation: () => DomainNameApiAssociation,
-  FunctionConfiguration: () => FunctionConfiguration,
-  GraphQLApi: () => GraphQLApi,
-  GraphQLApiProvider: () => GraphQLApiProvider,
-  GraphQLSchema: () => GraphQLSchema,
-  GraphQLSchemaProvider: () => GraphQLSchemaProvider,
-  Resolver: () => Resolver,
-  SourceApiAssociation: () => SourceApiAssociation
-});
-
-// src/provider/aws/appsync/data-source-provider.ts
-import {
-  AppSyncClient,
-  CreateDataSourceCommand,
-  DeleteDataSourceCommand,
-  GetDataSourceCommand,
-  NotFoundException as NotFoundException3,
-  UpdateDataSourceCommand
-} from "@aws-sdk/client-appsync";
-var DataSourceProvider = class {
-  client;
-  constructor(props) {
-    this.client = new AppSyncClient(props);
-  }
-  own(id) {
-    return id === "aws-appsync-data-source";
-  }
-  async get({ document }) {
-    const result = await this.client.send(
-      new GetDataSourceCommand({
-        apiId: document.apiId,
-        name: document.name
-      })
-    );
-    return result.dataSource;
-  }
-  async create({ document }) {
-    await this.client.send(
-      new CreateDataSourceCommand({
-        ...document
-      })
-    );
-    return JSON.stringify([document.apiId, document.name]);
-  }
-  async update({ id, oldDocument, newDocument }) {
-    if (oldDocument.apiId !== newDocument.apiId) {
-      throw new Error(`DataSource can't update apiId`);
-    }
-    if (oldDocument.name !== newDocument.name) {
-      throw new Error(`DataSource can't update name`);
-    }
-    await this.client.send(new UpdateDataSourceCommand(newDocument));
-    return id;
-  }
-  async delete({ document }) {
-    try {
-      await this.client.send(
-        new DeleteDataSourceCommand({
-          apiId: document.apiId,
-          name: document.name
-        })
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException3) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/appsync/data-source.ts
-var DataSource = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::DataSource", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-appsync-data-source";
-  get arn() {
-    return this.output((v) => v.dataSourceArn);
-  }
-  get name() {
-    return this.output((v) => v.name);
-  }
-  toState() {
-    return {
-      document: {
-        apiId: this.props.apiId,
-        name: this.props.name,
-        ...this.props.type === "none" ? {
-          type: "NONE"
-        } : {},
-        ...this.props.type === "lambda" ? {
-          type: "AWS_LAMBDA",
-          serviceRoleArn: this.props.role,
-          lambdaConfig: {
-            lambdaFunctionArn: this.props.functionArn
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/domain-name-api-association.ts
-var DomainNameApiAssociation = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::DomainNameApiAssociation", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  toState() {
-    return {
-      document: {
-        ApiId: this.props.apiId,
-        DomainName: this.props.domainName
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/domain-name.ts
-var DomainName2 = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::DomainName", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get appSyncDomainName() {
-    return this.output((v) => v.AppSyncDomainName);
-  }
-  get domainName() {
-    return this.output((v) => v.DomainName);
-  }
-  get hostedZoneId() {
-    return this.output((v) => v.HostedZoneId);
-  }
-  toState() {
-    return {
-      document: {
-        DomainName: this.props.domainName,
-        CertificateArn: this.props.certificateArn
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/function-configuration.ts
-var FunctionConfiguration = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::FunctionConfiguration", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.FunctionId);
-  }
-  get arn() {
-    return this.output((v) => v.FunctionArn);
-  }
-  toState() {
-    return {
-      assets: {
-        code: this.props.code
-      },
-      document: {
-        ApiId: this.props.apiId,
-        DataSourceName: this.props.dataSourceName,
-        Name: this.props.name,
-        Code: { __ASSET__: "code" },
-        Runtime: {
-          Name: "APPSYNC_JS",
-          RuntimeVersion: "1.0.0"
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/graphql-api-provider.ts
-import {
-  AppSyncClient as AppSyncClient2,
-  CreateGraphqlApiCommand,
-  DeleteGraphqlApiCommand,
-  GetGraphqlApiCommand,
-  NotFoundException as NotFoundException4,
-  UpdateGraphqlApiCommand
-} from "@aws-sdk/client-appsync";
-var GraphQLApiProvider = class {
-  client;
-  constructor(props) {
-    this.client = new AppSyncClient2(props);
-  }
-  own(id) {
-    return id === "aws-appsync-graphql-api";
-  }
-  async get({ id }) {
-    const result = await this.client.send(
-      new GetGraphqlApiCommand({
-        apiId: id
-      })
-    );
-    return result.graphqlApi;
-  }
-  async create({ document }) {
-    const result = await this.client.send(
-      new CreateGraphqlApiCommand({
-        ...document
-      })
-    );
-    return result.graphqlApi?.apiId;
-  }
-  async update({ id, newDocument }) {
-    await this.client.send(
-      new UpdateGraphqlApiCommand({
-        apiId: id,
-        ...newDocument
-      })
-    );
-    return id;
-  }
-  async delete({ id }) {
-    try {
-      await this.client.send(
-        new DeleteGraphqlApiCommand({
-          apiId: id
-        })
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException4) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/appsync/graphql-api.ts
-import { toSeconds as toSeconds2 } from "@awsless/duration";
-var GraphQLApi = class extends Resource {
-  // private defaultAuthorization?: GraphQLAuthorization
-  // private lambdaAuthProviders: { arn: string, ttl: Duration }[] = []
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::GraphQLApi", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-appsync-graphql-api";
-  get id() {
-    return this.output((v) => v.apiId);
-  }
-  get arn() {
-    return this.output((v) => v.arn);
-  }
-  get name() {
-    return this.output((v) => v.name);
-  }
-  get realtime() {
-    return {
-      uri: this.output((v) => v.uris.REALTIME),
-      dns: this.output((v) => v.dns.REALTIME)
-    };
-  }
-  get graphql() {
-    return {
-      uri: this.output((v) => v.uris.GRAPHQL),
-      dns: this.output((v) => v.dns.GRAPHQL)
-    };
-  }
-  // addDataSource(id: string, props:) {
-  // }
-  // assignDomainName(
-  // 	id: string,
-  // 	props: {
-  // 		domainName: Input<string>
-  // 		certificateArn: Input<ARN>
-  // 	}
-  // ) {
-  // 	const domain = new DomainName(id, props)
-  // 	this.add(domain)
-  // 	// const association = new DomainNameApiAssociation(id, {
-  // 	// 	apiId: this.id,
-  // 	// 	domainName: domain.domainName,
-  // 	// })
-  // 	// domain.add(association)
-  // 	return domain
-  // }
-  // setDefaultAuthorization(auth: GraphQLAuthorization) {
-  // 	this.defaultAuthorization = auth
-  // 	return this
-  // }
-  // addLambdaAuthProvider(lambdaAuthorizerArn: string, resultTTL: Duration = Duration.seconds(0)) {
-  // 	this.lambdaAuthProviders.push({
-  // 		arn: lambdaAuthorizerArn,
-  // 		ttl: resultTTL,
-  // 	})
-  // 	return this
-  // }
-  // addCognitoAuthProvider(lambdaAuthorizerArn: string, resultTTL: Duration = Duration.seconds(0)) {
-  // 	this.lambdaAuthProviders.push({
-  // 		arn: lambdaAuthorizerArn,
-  // 		ttl: resultTTL,
-  // 	})
-  // 	return this
-  // }
-  formatAuth(props) {
-    const type = unwrap(props.type);
-    if (type === "api-key") {
-      return { authenticationType: "API_KEY" };
-    }
-    if (type === "iam") {
-      return { authenticationType: "AWS_IAM" };
-    }
-    if (type === "cognito") {
-      const prop2 = props;
-      return {
-        authenticationType: "AMAZON_COGNITO_USER_POOLS",
-        userPoolConfig: {
-          userPoolId: prop2.userPoolId,
-          defaultAction: prop2.defaultAction ?? "ALLOW",
-          ...this.attr("awsRegion", prop2.region),
-          ...this.attr("appIdClientRegex", prop2.appIdClientRegex)
-        }
-      };
-    }
-    const prop = props;
-    return {
-      authenticationType: "AWS_LAMBDA",
-      lambdaAuthorizerConfig: {
-        authorizerUri: prop.functionArn,
-        ...this.attr("authorizerResultTtlInSeconds", prop.resultTtl && toSeconds2(unwrap(prop.resultTtl))),
-        ...this.attr("identityValidationExpression", prop.tokenRegex)
-      }
-    };
-  }
-  toState() {
-    const auth = unwrap(this.props.auth);
-    return {
-      document: {
-        name: this.props.name,
-        apiType: unwrap(this.props.type, "graphql").toUpperCase(),
-        ...this.attr("mergedApiExecutionRoleArn", this.props.role),
-        ...this.formatAuth(unwrap(auth.default)),
-        additionalAuthenticationProviders: unwrap(auth.additional, []).map((v) => unwrap(v)).map(this.formatAuth),
-        visibility: unwrap(this.props.visibility, true) ? "GLOBAL" : "PRIVATE",
-        introspectionConfig: unwrap(this.props.introspection, true) ? "ENABLED" : "DISABLED",
-        environmentVariables: JSON.stringify(unwrap(this.props.environment, {}))
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/graphql-schema-provider.ts
-import {
-  AppSyncClient as AppSyncClient3,
-  DeleteGraphqlApiCommand as DeleteGraphqlApiCommand2,
-  GetSchemaCreationStatusCommand,
-  NotFoundException as NotFoundException5,
-  StartSchemaCreationCommand
-} from "@aws-sdk/client-appsync";
-var GraphQLSchemaProvider = class {
-  client;
-  constructor(props) {
-    this.client = new AppSyncClient3(props);
-  }
-  own(id) {
-    return id === "aws-appsync-graphql-schema";
-  }
-  async waitStatusComplete(id) {
-    while (true) {
-      const result = await this.client.send(
-        new GetSchemaCreationStatusCommand({
-          apiId: id
-        })
-      );
-      if (result.status === "FAILED") {
-        throw new Error(result.details);
-      }
-      if (result.status === "SUCCESS" || result.status === "ACTIVE") {
-        return;
-      }
-      await sleep(5e3);
-    }
-  }
-  async get() {
-    return {};
-  }
-  async create({ document, assets }) {
-    await this.client.send(
-      new StartSchemaCreationCommand({
-        apiId: document.apiId,
-        definition: assets.definition?.data
-      })
-    );
-    await this.waitStatusComplete(document.apiId);
-    return document.apiId;
-  }
-  async update({ oldDocument, newDocument, newAssets }) {
-    if (oldDocument.apiId !== newDocument.apiId) {
-      throw new Error(`GraphGLSchema can't change the api id`);
-    }
-    await this.client.send(
-      new StartSchemaCreationCommand({
-        apiId: newDocument.apiId,
-        definition: newAssets.definition?.data
-      })
-    );
-    await this.waitStatusComplete(newDocument.apiId);
-    return newDocument.apiId;
-  }
-  async delete({ id }) {
-    try {
-      await this.client.send(
-        new DeleteGraphqlApiCommand2({
-          apiId: id
-        })
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException5) {
-        throw new ResourceNotFound(error.message);
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/appsync/graphql-schema.ts
-var GraphQLSchema = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::GraphQLSchema", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-appsync-graphql-schema";
-  toState() {
-    return {
-      assets: {
-        definition: this.props.definition
-      },
-      document: {
-        apiId: this.props.apiId
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/resolver.ts
-import { constantCase } from "change-case";
-var Resolver = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::Resolver", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.ResolverArn);
-  }
-  toState() {
-    return {
-      assets: {
-        code: this.props.code
-      },
-      document: {
-        ApiId: this.props.apiId,
-        Kind: unwrap(this.props.kind).toUpperCase(),
-        TypeName: this.props.typeName,
-        FieldName: this.props.fieldName,
-        DataSourceName: this.props.dataSourceName,
-        // PipelineConfig: {
-        // 	Functions: this.props.functions,
-        // },
-        Code: { __ASSET__: "code" },
-        Runtime: {
-          Name: constantCase(unwrap(this.props.runtime).name),
-          RuntimeVersion: unwrap(this.props.runtime).version
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/appsync/source-api-association.ts
-var SourceApiAssociation = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AppSync::SourceApiAssociation", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  toState() {
-    return {
-      document: {
-        MergedApiIdentifier: this.props.mergedApiId,
-        SourceApiIdentifier: this.props.sourceApiId,
-        SourceApiAssociationConfig: {
-          MergeType: unwrap(this.props.mergeType, "auto") === "auto" ? "AUTO_MERGE" : "MANUAL_MERGE"
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/auto-scaling/index.ts
-var auto_scaling_exports = {};
-__export(auto_scaling_exports, {
-  AutoScalingGroup: () => AutoScalingGroup
-});
-
-// src/provider/aws/auto-scaling/auto-scaling-group.ts
-import { toSeconds as toSeconds3 } from "@awsless/duration";
-import { constantCase as constantCase2, pascalCase } from "change-case";
-var AutoScalingGroup = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::AutoScaling::AutoScalingGroup", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.AutoScalingGroupName);
-  }
-  // get arn() {
-  // 	return this.output<ARN>(v => v.Arn)
-  // }
-  toState() {
-    return {
-      document: {
-        AutoScalingGroupName: this.props.name,
-        ...this.attr("DefaultInstanceWarmup", this.props.defaultInstanceWarmup, toSeconds3),
-        ...this.attr("DesiredCapacity", this.props.desiredCapacity),
-        DesiredCapacityType: "units",
-        // "HealthCheckGracePeriod" : Integer,
-        // "HealthCheckType" : String,
-        // "InstanceId" : String,
-        InstanceMaintenancePolicy: {
-          MaxHealthyPercentage: this.props.maxHealthyPercentage,
-          MinHealthyPercentage: this.props.minHealthyPercentage
-        },
-        // LaunchConfigurationName: this.props.launchConfiguration,
-        LaunchTemplate: {
-          LaunchTemplateSpecification: {
-            LaunchTemplateId: unwrap(this.props.launchTemplate).id,
-            Version: unwrap(this.props.launchTemplate).version
-          }
-        },
-        // "LifecycleHookSpecificationList" : [ LifecycleHookSpecification, ... ],
-        // "LoadBalancerNames" : [ String, ... ],
-        // "MaxInstanceLifetime" : Integer,
-        MaxSize: this.props.maxSize,
-        MinSize: this.props.minSize,
-        // "MetricsCollection" : [ MetricsCollection, ... ],
-        // "MixedInstancesPolicy" : MixedInstancesPolicy,
-        // "NewInstancesProtectedFromScaleIn" : Boolean,
-        // "NotificationConfigurations" : [ NotificationConfiguration, ... ],
-        NotificationConfigurations: unwrap(this.props.notifications, []).map((v) => unwrap(v)).map((n) => ({
-          NotificationTypes: unwrap(n.type).map(
-            (t) => `autoscaling:EC2_INSTANCE_${constantCase2(unwrap(t))}`
-          ),
-          TopicARN: n.topic
-        })),
-        // "PlacementGroup" : String,
-        // "ServiceLinkedRoleARN" : String,
-        // "Tags" : [ TagProperty, ... ],
-        // "TargetGroupARNs" : [ String, ... ],
-        TerminationPolicies: unwrap(this.props.terminationPolicy, []).map((v) => unwrap(v)).map((v) => pascalCase(v)),
-        VPCZoneIdentifier: this.props.subnets
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/index.ts
-var cloud_front_exports = {};
-__export(cloud_front_exports, {
-  CachePolicy: () => CachePolicy,
-  Distribution: () => Distribution,
-  Function: () => Function,
-  InvalidateCache: () => InvalidateCache,
-  InvalidateCacheProvider: () => InvalidateCacheProvider,
-  OriginAccessControl: () => OriginAccessControl,
-  OriginRequestPolicy: () => OriginRequestPolicy,
-  ResponseHeadersPolicy: () => ResponseHeadersPolicy
-});
-
-// src/provider/aws/cloud-front/cache-policy.ts
-import { toSeconds as toSeconds4 } from "@awsless/duration";
-var CachePolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::CachePolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  toState() {
-    return {
-      document: {
-        CachePolicyConfig: {
-          Name: this.props.name,
-          MinTTL: toSeconds4(unwrap(this.props.minTtl)),
-          MaxTTL: toSeconds4(unwrap(this.props.maxTtl)),
-          DefaultTTL: toSeconds4(unwrap(this.props.defaultTtl)),
-          ParametersInCacheKeyAndForwardedToOrigin: {
-            EnableAcceptEncodingGzip: unwrap(this.props.acceptGzip, false),
-            EnableAcceptEncodingBrotli: unwrap(this.props.acceptBrotli, false),
-            CookiesConfig: {
-              CookieBehavior: unwrap(this.props.cookies) ? "whitelist" : "none",
-              ...this.attr("Cookies", this.props.cookies)
-            },
-            HeadersConfig: {
-              HeaderBehavior: unwrap(this.props.headers) ? "whitelist" : "none",
-              ...this.attr("Headers", this.props.headers)
-            },
-            QueryStringsConfig: {
-              QueryStringBehavior: unwrap(this.props.queries) ? "whitelist" : "none",
-              ...this.attr("QueryStrings", this.props.queries)
-            }
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/distribution.ts
-import { toSeconds as toSeconds5 } from "@awsless/duration";
-var Distribution = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::Distribution", id, props, ["DistributionConfig.ViewerCertificate"]);
-    this.parent = parent;
-    this.props = props;
-  }
-  // get arn() {
-  // 	return sub('arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${id}', {
-  // 		id: this.id,
-  // 	})
-  // }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get domainName() {
-    return this.output((v) => v.DomainName);
-  }
-  get hostedZoneId() {
-    return "Z2FDTNDATAQYW2";
-  }
-  get aliasTarget() {
-    return {
-      dnsName: this.domainName,
-      hostedZoneId: this.hostedZoneId,
-      evaluateTargetHealth: false
-    };
-  }
-  toState() {
-    return {
-      document: {
-        DistributionConfig: {
-          Enabled: true,
-          Aliases: unwrap(this.props.aliases, []),
-          PriceClass: "PriceClass_" + unwrap(this.props.priceClass, "All"),
-          HttpVersion: unwrap(this.props.httpVersion, "http2and3"),
-          ViewerCertificate: this.props.certificateArn ? {
-            SslSupportMethod: "sni-only",
-            MinimumProtocolVersion: "TLSv1.2_2021",
-            AcmCertificateArn: this.props.certificateArn
-          } : {
-            CloudFrontDefaultCertificate: true
-          },
-          Origins: unwrap(this.props.origins, []).map((v) => unwrap(v)).map((origin) => ({
-            Id: origin.id,
-            DomainName: origin.domainName,
-            OriginCustomHeaders: Object.entries(unwrap(origin.headers, {})).map(([name, value]) => ({
-              HeaderName: name,
-              HeaderValue: value
-            })),
-            ...origin.path ? {
-              OriginPath: origin.path
-            } : {},
-            ...origin.protocol ? {
-              CustomOriginConfig: {
-                OriginProtocolPolicy: origin.protocol
-              }
-            } : {},
-            ...typeof origin.originAccessIdentityId !== "undefined" ? {
-              S3OriginConfig: {
-                OriginAccessIdentity: origin.originAccessIdentityId
-              }
-            } : {},
-            ...origin.originAccessControlId ? {
-              OriginAccessControlId: origin.originAccessControlId
-            } : {}
-          })),
-          OriginGroups: {
-            Quantity: unwrap(this.props.originGroups, []).length ?? 0,
-            Items: unwrap(this.props.originGroups, []).map((v) => unwrap(v)).map((originGroup) => ({
-              Id: originGroup.id,
-              Members: {
-                Quantity: unwrap(originGroup.members).length,
-                Items: unwrap(originGroup.members).map((member) => ({
-                  OriginId: member
-                }))
-              },
-              FailoverCriteria: {
-                StatusCodes: {
-                  Quantity: unwrap(originGroup.statusCodes).length,
-                  Items: originGroup.statusCodes
-                }
-              }
-            }))
-          },
-          CustomErrorResponses: unwrap(this.props.customErrorResponses, []).map((v) => unwrap(v)).map((item) => ({
-            ErrorCode: item.errorCode,
-            ...this.attr("ErrorCachingMinTTL", item.cacheMinTTL && toSeconds5(unwrap(item.cacheMinTTL))),
-            ...this.attr("ResponseCode", item.responseCode),
-            ...this.attr("ResponsePagePath", item.responsePath)
-          })),
-          DefaultCacheBehavior: {
-            TargetOriginId: this.props.targetOriginId,
-            ViewerProtocolPolicy: unwrap(this.props.viewerProtocol, "redirect-to-https"),
-            AllowedMethods: unwrap(this.props.allowMethod, ["GET", "HEAD", "OPTIONS"]),
-            Compress: unwrap(this.props.compress, false),
-            ...this.attr("DefaultRootObject", this.props.defaultRootObject),
-            FunctionAssociations: unwrap(this.props.associations, []).map((v) => unwrap(v)).map((association) => ({
-              EventType: association.type,
-              FunctionARN: association.functionArn
-            })),
-            LambdaFunctionAssociations: unwrap(this.props.lambdaAssociations, []).map((v) => unwrap(v)).map((association) => ({
-              EventType: association.type,
-              IncludeBody: unwrap(association.includeBody, false),
-              FunctionARN: association.functionArn
-            })),
-            ...this.attr("CachePolicyId", this.props.cachePolicyId),
-            ...this.attr("OriginRequestPolicyId", this.props.originRequestPolicyId),
-            ...this.attr("ResponseHeadersPolicyId", this.props.responseHeadersPolicyId)
-          }
-        },
-        Tags: [{ Key: "Name", Value: this.props.name }]
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/function.ts
-var Function = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::Function", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.FunctionARN);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        AutoPublish: unwrap(this.props.autoPublish, true),
-        FunctionCode: this.props.code,
-        FunctionConfig: {
-          Runtime: `cloudfront-js-${unwrap(this.props.runtime, "2.0")}`,
-          Comment: this.props.comment
-        }
-        // FunctionMetadata: FunctionMetadata,
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/invalidate-cache-provider.ts
-import { CloudFrontClient, CreateInvalidationCommand } from "@aws-sdk/client-cloudfront";
-var InvalidateCacheProvider = class {
-  client;
-  constructor(props) {
-    this.client = new CloudFrontClient(props);
-  }
-  own(id) {
-    return id === "aws-cloud-front-invalidate-cache";
-  }
-  async invalidate(document) {
-    const id = sha256(JSON.stringify(document.Versions));
-    await this.client.send(
-      new CreateInvalidationCommand({
-        DistributionId: document.DistributionId,
-        InvalidationBatch: {
-          CallerReference: id,
-          Paths: {
-            Items: document.Paths,
-            Quantity: document.Paths.length
-          }
-        }
-      })
-    );
-    return id;
-  }
-  async get() {
-    return {};
-  }
-  async create({ document }) {
-    return this.invalidate(document);
-  }
-  async update({ newDocument }) {
-    return this.invalidate(newDocument);
-  }
-  async delete() {
-  }
-};
-
-// src/provider/aws/cloud-front/invalidate-cache.ts
-var InvalidateCache = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::InvalidateCache", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-cloud-front-invalidate-cache";
-  toState() {
-    return {
-      document: {
-        DistributionId: this.props.distributionId,
-        Versions: this.props.versions,
-        Paths: this.props.paths
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/origin-access-control.ts
-var OriginAccessControl = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::OriginAccessControl", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  toState() {
-    return {
-      document: {
-        OriginAccessControlConfig: {
-          Name: this.props.name,
-          Description: this.props.description,
-          OriginAccessControlOriginType: this.props.type,
-          SigningBehavior: unwrap(this.props.behavior, "always"),
-          SigningProtocol: unwrap(this.props.protocol, "sigv4")
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/origin-request-policy.ts
-import { camelCase } from "change-case";
-var OriginRequestPolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::OriginRequestPolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  toState() {
-    const cookie = unwrap(this.props.cookie);
-    const header = unwrap(this.props.header);
-    const query = unwrap(this.props.query);
-    return {
-      document: {
-        OriginRequestPolicyConfig: {
-          Name: this.props.name,
-          CookiesConfig: {
-            CookieBehavior: camelCase(unwrap(cookie?.behavior, "all")),
-            ...this.attr("Cookies", cookie?.values)
-          },
-          HeadersConfig: {
-            HeaderBehavior: camelCase(unwrap(header?.behavior, "all-viewer")),
-            ...this.attr("Headers", header?.values)
-          },
-          QueryStringsConfig: {
-            QueryStringBehavior: camelCase(unwrap(query?.behavior, "all")),
-            ...this.attr("QueryStrings", query?.values)
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-front/response-headers-policy.ts
-import { days, toSeconds as toSeconds6 } from "@awsless/duration";
-var ResponseHeadersPolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::CloudFront::ResponseHeadersPolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  toState() {
-    const remove = unwrap(this.props.remove, []);
-    const cors = unwrap(this.props.cors, {});
-    const contentSecurityPolicy = unwrap(this.props.contentSecurityPolicy);
-    const contentTypeOptions = unwrap(this.props.contentTypeOptions, {});
-    const frameOptions = unwrap(this.props.frameOptions, {});
-    const referrerPolicy = unwrap(this.props.referrerPolicy, {});
-    const strictTransportSecurity = unwrap(this.props.strictTransportSecurity, {});
-    const xssProtection = unwrap(this.props.xssProtection, {});
-    return {
-      document: {
-        ResponseHeadersPolicyConfig: {
-          Name: this.props.name,
-          ...remove.length > 0 ? {
-            RemoveHeadersConfig: {
-              Items: remove.map((value) => ({
-                Header: value
-              }))
-            }
-          } : {},
-          CorsConfig: {
-            OriginOverride: unwrap(cors.override, false),
-            AccessControlAllowCredentials: unwrap(cors.credentials, false),
-            AccessControlMaxAgeSec: toSeconds6(unwrap(cors.maxAge, days(365))),
-            AccessControlAllowHeaders: {
-              Items: unwrap(cors.headers, ["*"])
-            },
-            AccessControlAllowMethods: {
-              Items: unwrap(cors.methods, ["ALL"])
-            },
-            AccessControlAllowOrigins: {
-              Items: unwrap(cors.origins, ["*"])
-            },
-            AccessControlExposeHeaders: {
-              Items: unwrap(cors.exposeHeaders, ["*"])
-            }
-          },
-          SecurityHeadersConfig: {
-            ...contentSecurityPolicy ? {
-              ContentSecurityPolicy: {
-                Override: unwrap(contentSecurityPolicy.override, false),
-                ContentSecurityPolicy: unwrap(contentSecurityPolicy?.contentSecurityPolicy)
-              }
-            } : {},
-            ContentTypeOptions: {
-              Override: unwrap(contentTypeOptions.override, false)
-            },
-            FrameOptions: {
-              Override: unwrap(frameOptions.override, false),
-              FrameOption: unwrap(frameOptions.frameOption, "same-origin") === "same-origin" ? "SAMEORIGIN" : "DENY"
-            },
-            ReferrerPolicy: {
-              Override: unwrap(referrerPolicy.override, false),
-              ReferrerPolicy: unwrap(referrerPolicy.referrerPolicy, "same-origin")
-            },
-            StrictTransportSecurity: {
-              Override: unwrap(strictTransportSecurity.override, false),
-              Preload: unwrap(strictTransportSecurity.preload, true),
-              AccessControlMaxAgeSec: toSeconds6(unwrap(strictTransportSecurity.maxAge, days(365))),
-              IncludeSubdomains: unwrap(strictTransportSecurity.includeSubdomains, true)
-            },
-            XSSProtection: {
-              Override: unwrap(xssProtection.override, false),
-              ModeBlock: unwrap(xssProtection.modeBlock, true),
-              Protection: unwrap(xssProtection.enable, true),
-              ...this.attr("ReportUri", unwrap(xssProtection.reportUri))
-            }
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cognito/lambda-triggers-provider.ts
-import {
-  DescribeUserPoolCommand,
-  UpdateUserPoolCommand,
-  CognitoIdentityProviderClient
-} from "@aws-sdk/client-cognito-identity-provider";
-var LambdaTriggersProvider = class {
-  client;
-  constructor(props) {
-    this.client = new CognitoIdentityProviderClient(props);
-  }
-  own(id) {
-    return id === "aws-cognito-lambda-triggers";
-  }
-  async updateUserPool(document) {
-    const result = await this.client.send(
-      new DescribeUserPoolCommand({
-        UserPoolId: document.UserPoolId
-      })
-    );
-    delete result.UserPool?.AdminCreateUserConfig?.UnusedAccountValidityDays;
-    await this.client.send(
-      new UpdateUserPoolCommand({
-        ...result.UserPool,
-        ...document
-      })
-    );
-  }
-  async get({ document }) {
-    const result = await this.client.send(
-      new DescribeUserPoolCommand({
-        UserPoolId: document.UserPoolId
-      })
-    );
-    return result.UserPool?.LambdaConfig ?? {};
-  }
-  async create({ document }) {
-    await this.updateUserPool(document);
-    return document.UserPoolId;
-  }
-  async update({ oldDocument, newDocument }) {
-    if (oldDocument.UserPoolId !== newDocument.UserPoolId) {
-      throw new Error(`LambdaTriggers can't change the user pool id`);
-    }
-    await this.updateUserPool(newDocument);
-    return newDocument.UserPoolId;
-  }
-  async delete({ document }) {
-    await this.client.send(
-      new UpdateUserPoolCommand({
-        UserPoolId: document.UserPoolId,
-        LambdaConfig: {}
+  //   refresh(app: App) {
+  //     return lockApp(this.props.backend.lock, app, async () => {
+  //       try {
+  //         await refresh(app, this.props);
+  //       } finally {
+  //         await this.destroyProviders();
+  //       }
+  //     });
+  //   }
+  async destroyProviders() {
+    await Promise.all(
+      this.props.providers.map((p) => {
+        return p.destroy?.();
       })
     );
   }
 };
 
-// src/provider/aws/dynamodb/table-item-provider.ts
-import { DeleteItemCommand, DynamoDB, PutItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall } from "@aws-sdk/util-dynamodb";
-var TableItemProvider = class {
-  client;
-  constructor(props) {
-    this.client = new DynamoDB(props);
-  }
-  own(id) {
-    return id === "aws-dynamodb-table-item";
-  }
-  marshall(item) {
-    return marshall(item, {
-      removeUndefinedValues: true
-    });
-  }
-  primaryKey(document, item) {
-    const key = {
-      [document.hash]: item[document.hash]
-    };
-    if (document.sort) {
-      key[document.sort] = item[document.sort];
-    }
-    return key;
-  }
-  async get() {
-    return {};
-  }
-  async create({ document, assets }) {
-    const item = JSON.parse(assets.item.data.toString("utf8"));
-    const key = this.primaryKey(document, item);
-    await this.client.send(
-      new PutItemCommand({
-        TableName: document.table,
-        Item: this.marshall(item)
-      })
-    );
-    return JSON.stringify([document.table, key]);
-  }
-  async update({ id, oldDocument, newDocument, newAssets }) {
-    if (oldDocument.table !== newDocument.table) {
-      throw new Error(`TableItem can't change the table name`);
-    }
-    if (oldDocument.hash !== newDocument.hash) {
-      throw new Error(`TableItem can't change the hash key`);
-    }
-    if (oldDocument.sort !== newDocument.sort) {
-      throw new Error(`TableItem can't change the sort key`);
-    }
-    const [_, oldKey] = JSON.parse(id);
-    const item = JSON.parse(newAssets.item.data.toString("utf8"));
-    const key = this.primaryKey(newDocument, item);
-    if (JSON.stringify(oldKey) !== JSON.stringify(key)) {
-      await this.client.send(
-        new DeleteItemCommand({
-          TableName: newDocument.table,
-          Key: this.marshall(oldKey)
-        })
-      );
-    }
-    await this.client.send(
-      new PutItemCommand({
-        TableName: newDocument.table,
-        Item: this.marshall(item)
-      })
-    );
-    return JSON.stringify([newDocument.table, key]);
-  }
-  async delete({ id }) {
-    const [table, oldKey] = JSON.parse(id);
-    await this.client.send(
-      new DeleteItemCommand({
-        TableName: table,
-        Key: this.marshall(oldKey)
-      })
-    );
-  }
-};
-
-// src/provider/aws/ec2/index.ts
-var ec2_exports = {};
-__export(ec2_exports, {
-  Instance: () => Instance,
-  InstanceConnectEndpoint: () => InstanceConnectEndpoint,
-  InstanceProvider: () => InstanceProvider,
-  InternetGateway: () => InternetGateway,
-  KeyPair: () => KeyPair,
-  LaunchTemplate: () => LaunchTemplate,
-  Peer: () => Peer,
-  Port: () => Port,
-  Protocol: () => Protocol,
-  Route: () => Route2,
-  RouteTable: () => RouteTable,
-  SecurityGroup: () => SecurityGroup,
-  Subnet: () => Subnet,
-  SubnetRouteTableAssociation: () => SubnetRouteTableAssociation,
-  VPCCidrBlock: () => VPCCidrBlock,
-  VPCGatewayAttachment: () => VPCGatewayAttachment,
-  Vpc: () => Vpc
-});
-
-// src/provider/aws/ec2/instance.ts
-var Instance = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::Instance", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-ec2-instance";
-  get id() {
-    return this.output((v) => v.InstanceId);
-  }
-  get privateDnsName() {
-    return this.output((v) => v.PrivateDnsName);
-  }
-  get privateIp() {
-    return this.output((v) => v.PrivateIp);
-  }
-  get publicDnsName() {
-    return this.output((v) => v.PublicDnsName);
-  }
-  get publicIp() {
-    return this.output((v) => v.PublicIp);
-  }
-  toState() {
-    const template = unwrap(this.props.launchTemplate);
-    return {
-      extra: {
-        waitForTermination: unwrap(this.props.waitForTermination, true)
-      },
-      document: {
-        LaunchTemplate: {
-          LaunchTemplateId: template.id,
-          Version: template.version
-        },
-        KeyName: this.props.keyName,
-        SubnetId: this.props.subnetId,
-        SecurityGroupIds: this.props.securityGroupIds,
-        IamInstanceProfile: this.props.iamInstanceProfile,
-        Tags: [
-          {
-            Key: "Name",
-            Value: this.props.name
-          },
-          ...Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-            Key: k,
-            Value: v
-          }))
-        ]
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/instance-connect-endpoint.ts
-var InstanceConnectEndpoint = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::InstanceConnectEndpoint", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.InstanceConnectEndpointId);
-  }
-  toState() {
-    return {
-      document: {
-        PreserveClientIp: this.props.preserveClientIp,
-        SecurityGroupIds: this.props.securityGroupIds,
-        SubnetId: this.props.subnetId,
-        Tags: [
-          { Key: "Name", Value: this.props.name },
-          ...Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-            Key: k,
-            Value: v
-          }))
-        ]
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/instance-provider.ts
-import {
-  DescribeInstancesCommand,
-  EC2Client,
-  EC2ServiceException,
-  RunInstancesCommand,
-  TerminateInstancesCommand,
-  waitUntilInstanceRunning,
-  waitUntilInstanceTerminated
-} from "@aws-sdk/client-ec2";
-var InstanceProvider = class {
-  client;
-  constructor(props) {
-    this.client = new EC2Client(props);
-  }
-  own(id) {
-    return id === "aws-ec2-instance";
-  }
-  async get({ id }) {
-    const result = await this.client.send(
-      new DescribeInstancesCommand({
-        InstanceIds: [id]
-      })
-    );
-    return result.Reservations.at(0).Instances.at(0);
-  }
-  async create({ document }) {
-    return this.runInstance(document);
-  }
-  async update({ id, newDocument, extra }) {
-    await this.terminateInstance(id, true, extra.waitForTermination);
-    return this.runInstance(newDocument);
-  }
-  async delete({ id, extra }) {
-    await this.terminateInstance(id, false, extra.waitForTermination);
-  }
-  async runInstance(document) {
-    const result = await this.client.send(
-      new RunInstancesCommand({
-        ...document,
-        MinCount: 1,
-        MaxCount: 1,
-        IamInstanceProfile: {
-          Arn: document.IamInstanceProfile
-        },
-        TagSpecifications: [
-          {
-            ResourceType: "instance",
-            Tags: document.Tags
-          }
-        ]
-      })
-    );
-    const id = result.Instances.at(0).InstanceId;
-    await waitUntilInstanceRunning(
-      {
-        client: this.client,
-        maxWaitTime: 5 * 60,
-        maxDelay: 15,
-        minDelay: 3
-      },
-      {
-        InstanceIds: [id]
-      }
-    );
-    return id;
-  }
-  async terminateInstance(id, skipOnNotFound = false, waitForTermination = true) {
-    try {
-      await this.client.send(
-        new TerminateInstancesCommand({
-          InstanceIds: [id]
-        })
-      );
-    } catch (error) {
-      if (error instanceof EC2ServiceException) {
-        if (error.message.includes("not exist")) {
-          if (skipOnNotFound) {
-            return;
-          }
-          throw new ResourceNotFound(error.message);
-        }
-      }
-      throw error;
-    }
-    if (waitForTermination) {
-      await waitUntilInstanceTerminated(
-        {
-          client: this.client,
-          maxWaitTime: 5 * 60,
-          maxDelay: 15,
-          minDelay: 3
-        },
-        {
-          InstanceIds: [id]
-        }
-      );
-    }
-  }
-};
-
-// src/provider/aws/ec2/internet-gateway.ts
-var InternetGateway = class extends CloudControlApiResource {
-  constructor(parent, id, props = {}) {
-    super(parent, "AWS::EC2::InternetGateway", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.InternetGatewayId);
-  }
-  toState() {
-    return {
-      document: {
-        Tags: this.props.name ? [
-          {
-            Key: "Name",
-            Value: this.props.name
-          }
-        ] : []
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/key-pair.ts
-var KeyPair = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::KeyPair", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.KeyPairId);
-  }
-  get fingerprint() {
-    return this.output((v) => v.KeyFingerprint);
-  }
-  get name() {
-    return this.output((v) => v.KeyName);
-  }
-  toState() {
-    return {
-      document: {
-        KeyName: this.props.name,
-        KeyType: unwrap(this.props.type, "rsa"),
-        KeyFormat: unwrap(this.props.format, "pem"),
-        PublicKeyMaterial: this.props.publicKey,
-        Tags: Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-          Key: k,
-          Value: v
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/launch-template.ts
-var LaunchTemplate = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::LaunchTemplate", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.LaunchTemplateName);
-  }
-  get id() {
-    return this.output((v) => v.LaunchTemplateId);
-  }
-  get defaultVersion() {
-    return this.output((v) => v.DefaultVersionNumber);
-  }
-  get latestVersion() {
-    return this.output((v) => v.LatestVersionNumber);
-  }
-  get version() {
-    return this.latestVersion;
-  }
-  toState() {
-    return {
-      assets: {
-        userData: this.props.userData
-      },
-      document: {
-        LaunchTemplateName: this.props.name,
-        LaunchTemplateData: {
-          EbsOptimized: this.props.ebsOptimized,
-          IamInstanceProfile: {
-            Arn: this.props.iamInstanceProfile
-          },
-          ImageId: this.props.imageId,
-          InstanceType: this.props.instanceType,
-          Monitoring: {
-            Enabled: unwrap(this.props.monitoring, false)
-          },
-          SecurityGroupIds: this.props.securityGroupIds,
-          UserData: {
-            __ASSET__: "userData"
-          }
-          // ...this.attr('UserData', this.props.userData, v => Buffer.from(v, 'utf8').toString('base64')),
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/peer.ts
-var Peer = class _Peer {
-  constructor(ip, type) {
-    this.ip = ip;
-    this.type = type;
-  }
-  static ipv4(cidrIp) {
-    const cidrMatch = cidrIp.match(/^(\d{1,3}\.){3}\d{1,3}(\/\d+)?$/);
-    if (!cidrMatch) {
-      throw new Error(`Invalid IPv4 CIDR: "${cidrIp}"`);
-    }
-    if (!cidrMatch[2]) {
-      throw new Error(`CIDR mask is missing in IPv4: "${cidrIp}". Did you mean "${cidrIp}/32"?`);
-    }
-    return new _Peer(cidrIp, "v4");
-  }
-  static anyIpv4() {
-    return new _Peer("0.0.0.0/0", "v4");
-  }
-  static ipv6(cidrIpv6) {
-    const cidrMatch = cidrIpv6.match(/^([\da-f]{0,4}:){2,7}([\da-f]{0,4})?(\/\d+)?$/);
-    if (!cidrMatch) {
-      throw new Error(`Invalid IPv6 CIDR: "${cidrIpv6}"`);
-    }
-    if (!cidrMatch[3]) {
-      throw new Error(`CIDR mask is missing in IPv6: "${cidrIpv6}". Did you mean "${cidrIpv6}/128"?`);
-    }
-    return new _Peer(cidrIpv6, "v6");
-  }
-  static anyIpv6() {
-    return new _Peer("::/0", "v6");
-  }
-  toRuleJson() {
-    switch (this.type) {
-      case "v4":
-        return { CidrIp: this.ip };
-      case "v6":
-        return { CidrIpv6: this.ip };
-    }
-  }
-  toString() {
-    return this.ip;
-  }
-};
-
-// src/provider/aws/ec2/port.ts
-var Protocol = /* @__PURE__ */ ((Protocol2) => {
-  Protocol2["ALL"] = "-1";
-  Protocol2["HOPOPT"] = "0";
-  Protocol2["ICMP"] = "icmp";
-  Protocol2["IGMP"] = "2";
-  Protocol2["GGP"] = "3";
-  Protocol2["IPV4"] = "4";
-  Protocol2["ST"] = "5";
-  Protocol2["TCP"] = "tcp";
-  Protocol2["CBT"] = "7";
-  Protocol2["EGP"] = "8";
-  Protocol2["IGP"] = "9";
-  Protocol2["BBN_RCC_MON"] = "10";
-  Protocol2["NVP_II"] = "11";
-  Protocol2["PUP"] = "12";
-  Protocol2["EMCON"] = "14";
-  Protocol2["XNET"] = "15";
-  Protocol2["CHAOS"] = "16";
-  Protocol2["UDP"] = "udp";
-  Protocol2["MUX"] = "18";
-  Protocol2["DCN_MEAS"] = "19";
-  Protocol2["HMP"] = "20";
-  Protocol2["PRM"] = "21";
-  Protocol2["XNS_IDP"] = "22";
-  Protocol2["TRUNK_1"] = "23";
-  Protocol2["TRUNK_2"] = "24";
-  Protocol2["LEAF_1"] = "25";
-  Protocol2["LEAF_2"] = "26";
-  Protocol2["RDP"] = "27";
-  Protocol2["IRTP"] = "28";
-  Protocol2["ISO_TP4"] = "29";
-  Protocol2["NETBLT"] = "30";
-  Protocol2["MFE_NSP"] = "31";
-  Protocol2["MERIT_INP"] = "32";
-  Protocol2["DCCP"] = "33";
-  Protocol2["THREEPC"] = "34";
-  Protocol2["IDPR"] = "35";
-  Protocol2["XTP"] = "36";
-  Protocol2["DDP"] = "37";
-  Protocol2["IDPR_CMTP"] = "38";
-  Protocol2["TPPLUSPLUS"] = "39";
-  Protocol2["IL"] = "40";
-  Protocol2["IPV6"] = "41";
-  Protocol2["SDRP"] = "42";
-  Protocol2["IPV6_ROUTE"] = "43";
-  Protocol2["IPV6_FRAG"] = "44";
-  Protocol2["IDRP"] = "45";
-  Protocol2["RSVP"] = "46";
-  Protocol2["GRE"] = "47";
-  Protocol2["DSR"] = "48";
-  Protocol2["BNA"] = "49";
-  Protocol2["ESP"] = "50";
-  Protocol2["AH"] = "51";
-  Protocol2["I_NLSP"] = "52";
-  Protocol2["SWIPE"] = "53";
-  Protocol2["NARP"] = "54";
-  Protocol2["MOBILE"] = "55";
-  Protocol2["TLSP"] = "56";
-  Protocol2["SKIP"] = "57";
-  Protocol2["ICMPV6"] = "icmpv6";
-  Protocol2["IPV6_NONXT"] = "59";
-  Protocol2["IPV6_OPTS"] = "60";
-  Protocol2["CFTP"] = "62";
-  Protocol2["ANY_LOCAL"] = "63";
-  Protocol2["SAT_EXPAK"] = "64";
-  Protocol2["KRYPTOLAN"] = "65";
-  Protocol2["RVD"] = "66";
-  Protocol2["IPPC"] = "67";
-  Protocol2["ANY_DFS"] = "68";
-  Protocol2["SAT_MON"] = "69";
-  Protocol2["VISA"] = "70";
-  Protocol2["IPCV"] = "71";
-  Protocol2["CPNX"] = "72";
-  Protocol2["CPHB"] = "73";
-  Protocol2["WSN"] = "74";
-  Protocol2["PVP"] = "75";
-  Protocol2["BR_SAT_MON"] = "76";
-  Protocol2["SUN_ND"] = "77";
-  Protocol2["WB_MON"] = "78";
-  Protocol2["WB_EXPAK"] = "79";
-  Protocol2["ISO_IP"] = "80";
-  Protocol2["VMTP"] = "81";
-  Protocol2["SECURE_VMTP"] = "82";
-  Protocol2["VINES"] = "83";
-  Protocol2["TTP"] = "84";
-  Protocol2["IPTM"] = "84_";
-  Protocol2["NSFNET_IGP"] = "85";
-  Protocol2["DGP"] = "86";
-  Protocol2["TCF"] = "87";
-  Protocol2["EIGRP"] = "88";
-  Protocol2["OSPFIGP"] = "89";
-  Protocol2["SPRITE_RPC"] = "90";
-  Protocol2["LARP"] = "91";
-  Protocol2["MTP"] = "92";
-  Protocol2["AX_25"] = "93";
-  Protocol2["IPIP"] = "94";
-  Protocol2["MICP"] = "95";
-  Protocol2["SCC_SP"] = "96";
-  Protocol2["ETHERIP"] = "97";
-  Protocol2["ENCAP"] = "98";
-  Protocol2["ANY_ENC"] = "99";
-  Protocol2["GMTP"] = "100";
-  Protocol2["IFMP"] = "101";
-  Protocol2["PNNI"] = "102";
-  Protocol2["PIM"] = "103";
-  Protocol2["ARIS"] = "104";
-  Protocol2["SCPS"] = "105";
-  Protocol2["QNX"] = "106";
-  Protocol2["A_N"] = "107";
-  Protocol2["IPCOMP"] = "108";
-  Protocol2["SNP"] = "109";
-  Protocol2["COMPAQ_PEER"] = "110";
-  Protocol2["IPX_IN_IP"] = "111";
-  Protocol2["VRRP"] = "112";
-  Protocol2["PGM"] = "113";
-  Protocol2["ANY_0_HOP"] = "114";
-  Protocol2["L2_T_P"] = "115";
-  Protocol2["DDX"] = "116";
-  Protocol2["IATP"] = "117";
-  Protocol2["STP"] = "118";
-  Protocol2["SRP"] = "119";
-  Protocol2["UTI"] = "120";
-  Protocol2["SMP"] = "121";
-  Protocol2["SM"] = "122";
-  Protocol2["PTP"] = "123";
-  Protocol2["ISIS_IPV4"] = "124";
-  Protocol2["FIRE"] = "125";
-  Protocol2["CRTP"] = "126";
-  Protocol2["CRUDP"] = "127";
-  Protocol2["SSCOPMCE"] = "128";
-  Protocol2["IPLT"] = "129";
-  Protocol2["SPS"] = "130";
-  Protocol2["PIPE"] = "131";
-  Protocol2["SCTP"] = "132";
-  Protocol2["FC"] = "133";
-  Protocol2["RSVP_E2E_IGNORE"] = "134";
-  Protocol2["MOBILITY_HEADER"] = "135";
-  Protocol2["UDPLITE"] = "136";
-  Protocol2["MPLS_IN_IP"] = "137";
-  Protocol2["MANET"] = "138";
-  Protocol2["HIP"] = "139";
-  Protocol2["SHIM6"] = "140";
-  Protocol2["WESP"] = "141";
-  Protocol2["ROHC"] = "142";
-  Protocol2["ETHERNET"] = "143";
-  Protocol2["EXPERIMENT_1"] = "253";
-  Protocol2["EXPERIMENT_2"] = "254";
-  Protocol2["RESERVED"] = "255";
-  return Protocol2;
-})(Protocol || {});
-var Port = class _Port {
-  static tcp(port) {
-    return new _Port({
-      protocol: "tcp" /* TCP */,
-      from: port,
-      to: port
-    });
-  }
-  static tcpRange(startPort, endPort) {
-    return new _Port({
-      protocol: "tcp" /* TCP */,
-      from: startPort,
-      to: endPort
-    });
-  }
-  static allTcp() {
-    return new _Port({
-      protocol: "tcp" /* TCP */,
-      from: 0,
-      to: 65535
-    });
-  }
-  static allTraffic() {
-    return new _Port({
-      protocol: "-1" /* ALL */
-    });
-  }
-  protocol;
-  from;
-  to;
-  constructor(props) {
-    this.protocol = props.protocol;
-    this.from = props.from;
-    this.to = props.to;
-  }
-  toRuleJson() {
-    return {
-      IpProtocol: this.protocol,
-      FromPort: this.from,
-      ToPort: this.to
-    };
-  }
-};
-
-// src/provider/aws/ec2/route.ts
-var Route2 = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::Route", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get gatewayId() {
-    return this.output((v) => v.GatewayId);
-  }
-  get routeTableId() {
-    return this.output((v) => v.RouteTableId);
-  }
-  get vpcEndpointId() {
-    return this.output((v) => v.VpcEndpointId);
-  }
-  get cidrBlock() {
-    return this.output((v) => Peer.ipv4(v.CidrBlock));
-  }
-  get destinationCidrBlock() {
-    return this.output((v) => Peer.ipv4(v.DestinationCidrBlock));
-  }
-  toState() {
-    const destination = unwrap(this.props.destination);
-    return {
-      document: {
-        GatewayId: this.props.gatewayId,
-        RouteTableId: this.props.routeTableId,
-        ...destination.type === "v4" ? { DestinationCidrBlock: destination.ip } : { DestinationIpv6CidrBlock: destination.ip }
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/route-table.ts
-var RouteTable = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::RouteTable", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.RouteTableId);
-  }
-  // get name() {
-  // 	return this.output<string>(v => v.RouteTableId)
-  // }
-  toState() {
-    return {
-      document: {
-        VpcId: this.props.vpcId,
-        Tags: [
-          {
-            Key: "Name",
-            Value: this.props.name
-          }
-        ]
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/security-group.ts
-var SecurityGroup = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::SecurityGroup", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  ingress = [];
-  egress = [];
-  get id() {
-    return this.output((v) => v.GroupId);
-  }
-  get name() {
-    return this.output((v) => v.GroupName);
-  }
-  addIngressRule(rule) {
-    this.ingress.push(rule);
-    this.registerDependency(rule);
-    return this;
-  }
-  addEgressRule(rule) {
-    this.egress.push(rule);
-    this.registerDependency(rule);
-    return this;
-  }
-  toState() {
-    return {
-      document: {
-        VpcId: this.props.vpcId,
-        GroupName: this.props.name,
-        GroupDescription: this.props.description,
-        SecurityGroupEgress: this.egress.map((rule) => unwrap(rule)).map((rule) => ({
-          ...unwrap(rule.peer).toRuleJson(),
-          ...unwrap(rule.port).toRuleJson(),
-          Description: unwrap(rule.description, "")
-        })),
-        SecurityGroupIngress: this.ingress.map((rule) => unwrap(rule)).map((rule) => ({
-          ...unwrap(rule.peer).toRuleJson(),
-          ...unwrap(rule.port).toRuleJson(),
-          Description: unwrap(rule.description, "")
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/subnet-route-table-association.ts
-var SubnetRouteTableAssociation = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::SubnetRouteTableAssociation", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  toState() {
-    return {
-      document: {
-        SubnetId: this.props.subnetId,
-        RouteTableId: this.props.routeTableId
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/subnet.ts
-var Subnet = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::Subnet", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.SubnetId);
-  }
-  get vpcId() {
-    return this.output((v) => v.VpcId);
-  }
-  get availabilityZone() {
-    return this.output((v) => v.AvailabilityZone);
-  }
-  get availabilityZoneId() {
-    return this.output((v) => v.AvailabilityZoneId);
-  }
-  associateRouteTable(routeTableId) {
-    return new SubnetRouteTableAssociation(this, this.identifier, {
-      routeTableId,
-      subnetId: this.id
-    });
-  }
-  toState() {
-    return {
-      document: {
-        VpcId: this.props.vpcId,
-        AvailabilityZone: this.props.availabilityZone,
-        // CidrBlock: unwrap(this.props.cidrBlock).ip,
-        AssignIpv6AddressOnCreation: this.props.assignIpv6AddressOnCreation,
-        ...this.attr("CidrBlock", this.props.cidrBlock, (v) => v.ip),
-        ...this.attr("Ipv6CidrBlock", this.props.ipv6CidrBlock, (v) => v.ip),
-        ...this.attr("Ipv6Native", this.props.ipv6Native),
-        ...this.attr("MapPublicIpOnLaunch", this.props.mapPublicIpOnLaunch),
-        Tags: [
-          {
-            Key: "Name",
-            Value: this.props.name
-          }
-        ]
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/vpc.ts
-var Vpc = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::VPC", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.VpcId);
-  }
-  get defaultNetworkAcl() {
-    return this.output((v) => v.DefaultNetworkAcl);
-  }
-  get defaultSecurityGroup() {
-    return this.output((v) => v.DefaultSecurityGroup);
-  }
-  toState() {
-    return {
-      document: {
-        CidrBlock: unwrap(this.props.cidrBlock).ip,
-        EnableDnsSupport: this.props.enableDnsSupport,
-        EnableDnsHostnames: this.props.enableDnsHostnames,
-        Tags: [
-          {
-            Key: "Name",
-            Value: this.props.name
-          }
-        ]
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/vpc-cidr-block.ts
-var VPCCidrBlock = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::VPCCidrBlock", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get vpcId() {
-    return this.output((v) => v.VpcId);
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get ipv6CidrBlock() {
-    return this.output((v) => v.Ipv6CidrBlock);
-  }
-  toState() {
-    return {
-      document: {
-        VpcId: this.props.vpcId,
-        ...this.attr("CidrBlock", this.props.cidrBlock, (v) => v.ip),
-        AmazonProvidedIpv6CidrBlock: this.props.amazonProvidedIpv6CidrBlock
-      }
-    };
-  }
-};
-
-// src/provider/aws/ec2/vpc-gateway-attachment.ts
-var VPCGatewayAttachment = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::EC2::VPCGatewayAttachment", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get vpcId() {
-    return this.output((v) => v.VpcId);
-  }
-  get internetGatewayId() {
-    return this.output((v) => v.InternetGatewayId);
-  }
-  toState() {
-    return {
-      document: {
-        VpcId: this.props.vpcId,
-        InternetGatewayId: this.props.internetGatewayId
-      }
-    };
-  }
-};
-
-// src/provider/aws/ecr/index.ts
-var ecr_exports = {};
-__export(ecr_exports, {
-  Image: () => Image,
-  ImageProvider: () => ImageProvider,
-  Repository: () => Repository
-});
-
-// src/provider/aws/ecr/image.ts
-var Image = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ECR::Image", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-ecr-image";
-  get uri() {
-    return this.output((v) => v.ImageUri);
-  }
-  toState() {
-    return {
-      assets: {
-        hash: this.props.hash
-      },
-      document: {
-        RepositoryName: this.props.repository,
-        ImageName: this.props.name,
-        Tag: this.props.tag
-      }
-    };
-  }
-};
-
-// src/provider/aws/ecr/image-provider.ts
-import { BatchDeleteImageCommand, ECRClient, GetAuthorizationTokenCommand } from "@aws-sdk/client-ecr";
-import { exec } from "promisify-child-process";
-var ImageProvider = class {
-  constructor(props) {
-    this.props = props;
-    this.client = new ECRClient({
-      ...props
-    });
-  }
-  client;
-  loggedIn = false;
-  own(id) {
-    return id === "aws-ecr-image";
-  }
-  async getCredentials() {
-    const command = new GetAuthorizationTokenCommand({});
-    const result = await this.client.send(command);
-    const [username, password] = Buffer.from(result.authorizationData[0].authorizationToken ?? "", "base64").toString("utf8").split(":");
-    return { username, password };
-  }
-  get url() {
-    return `${this.props.accountId}.dkr.ecr.${this.props.region}.amazonaws.com`;
-  }
-  async login() {
-    if (!this.loggedIn) {
-      const { username, password } = await this.getCredentials();
-      await exec(`docker logout ${this.url}`);
-      await exec(`echo "${password}" | docker login --username ${username} --password-stdin ${this.url}`);
-      this.loggedIn = true;
-    }
-  }
-  async tag(repository, name, tag) {
-    await exec(`docker tag ${name}:${tag} ${this.url}/${repository}:${name}`);
-  }
-  async rm(repository, name) {
-    await exec(`docker image -f rm ${this.url}/${repository}:${name} 2> /dev/null || true`);
-  }
-  async push(repository, name) {
-    await exec(`docker push ${this.url}/${repository}:${name}`);
-  }
-  async publish(document) {
-    const repo = document.RepositoryName;
-    const name = document.ImageName;
-    const tag = document.Tag;
-    await this.login();
-    await this.tag(repo, name, tag);
-    await this.push(repo, name);
-    await this.rm(repo, name);
-    return JSON.stringify([repo, name, tag]);
-  }
-  async get({ document }) {
-    return {
-      ImageUri: `${this.url}/${document.RepositoryName}:${document.ImageName}`
-    };
-  }
-  async create({ document }) {
-    return this.publish(document);
-  }
-  async update({ oldDocument, newDocument }) {
-    if (oldDocument.ImageName !== newDocument.ImageName) {
-      throw new Error(`ECR Image can't change the tag`);
-    }
-    return this.publish(newDocument);
-  }
-  async delete({ document }) {
-    await this.client.send(
-      new BatchDeleteImageCommand({
-        repositoryName: document.RepositoryName,
-        imageIds: [{ imageTag: document.ImageName }]
-      })
-    );
-  }
-};
-
-// src/provider/aws/ecr/repository.ts
-import { toDays } from "@awsless/duration";
-var Repository = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ECR::Repository", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  lifecycleRules = [];
-  get name() {
-    return this.output((v) => v.RepositoryName);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get uri() {
-    return this.output((v) => v.RepositoryUri);
-  }
-  addLifecycleRule(rule) {
-    this.lifecycleRules.push(rule);
-  }
-  formatLifecycleRules() {
-    return JSON.stringify({
-      rules: this.lifecycleRules.map((rule, index) => ({
-        rulePriority: index + 1,
-        description: rule.description,
-        selection: {
-          tagStatus: rule.tagStatus,
-          tagPatternList: rule.tagPatternList,
-          ..."maxImageCount" in rule ? {
-            countType: "imageCountMoreThan",
-            countNumber: rule.maxImageCount
-          } : {
-            countType: "sinceImagePushed",
-            countNumber: Number(toDays(rule.maxImageAge)),
-            countUnit: "days"
-          }
-        },
-        action: {
-          type: "expire"
-        }
-      }))
-    });
-  }
-  toState() {
-    return {
-      document: {
-        RepositoryName: this.props.name,
-        EmptyOnDelete: this.props.emptyOnDelete,
-        ImageTagMutability: this.props.imageTagMutability ? "MUTABLE" : "IMMUTABLE",
-        LifecyclePolicy: {
-          LifecyclePolicyText: this.lifecycleRules.length > 0 ? this.formatLifecycleRules() : void 0
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/iot/index.ts
-var iot_exports = {};
-__export(iot_exports, {
-  Authorizer: () => Authorizer,
-  DomainConfiguration: () => DomainConfiguration,
-  Endpoint: () => Endpoint,
-  EndpointProvider: () => EndpointProvider,
-  TopicRule: () => TopicRule
-});
-
-// src/provider/aws/iot/authorizer.ts
-var Authorizer = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IoT::Authorizer", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    return {
-      document: {
-        AuthorizerName: this.props.name,
-        AuthorizerFunctionArn: this.props.functionArn,
-        Status: unwrap(this.props.enabled, true) ? "ACTIVE" : "INACTIVE",
-        SigningDisabled: !unwrap(this.props.enableSigning, false),
-        EnableCachingForHttp: unwrap(this.props.enableCachingForHttp, false),
-        // TokenKeyName:
-        // TokenSigningPublicKeys:
-        // 	Key: Value
-        Tags: Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-          Key: k,
-          Value: v
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/iot/domain-configuration.ts
-import { constantCase as constantCase3 } from "change-case";
-var DomainConfiguration = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IoT::DomainConfiguration", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    return {
-      document: {
-        DomainConfigurationName: this.props.name,
-        DomainConfigurationStatus: unwrap(this.props.enabled, true) ? "ENABLED" : "DISABLED",
-        ServiceType: constantCase3(unwrap(this.props.type, "data")),
-        ApplicationProtocol: constantCase3(unwrap(this.props.protocol, "default")),
-        AuthenticationType: constantCase3(unwrap(this.props.authenticationType, "default")),
-        ...this.props.domainName ? {
-          ...this.attr("DomainName", this.props.domainName),
-          ...this.attr("ValidationCertificateArn", this.props.validationCertificate),
-          ...this.attr("ServerCertificateArns", this.props.certificates),
-          ServerCertificateConfig: {
-            EnableOCSPCheck: unwrap(this.props.enableOCSP, false)
-          }
-        } : {},
-        ...this.props.authorizer ? {
-          AuthorizerConfig: {
-            DefaultAuthorizerName: unwrap(this.props.authorizer).name,
-            AllowAuthorizerOverride: unwrap(unwrap(this.props.authorizer).allowOverride, false)
-          }
-        } : {},
-        // TlsConfig: {
-        // 	SecurityPolicy: {
-        // 	}
-        // },
-        Tags: Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-          Key: k,
-          Value: v
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/iot/endpoint-provider.ts
-import { DescribeEndpointCommand, IoTClient } from "@aws-sdk/client-iot";
-var EndpointProvider = class {
-  client;
-  constructor(props) {
-    this.client = new IoTClient(props);
-  }
-  own(id) {
-    return id === "aws-iot-endpoint";
-  }
-  async get({ document }) {
-    const result = await this.client.send(
-      new DescribeEndpointCommand({
-        endpointType: document.endpointType
-      })
-    );
-    return {
-      address: result.endpointAddress
-    };
-  }
-  async create() {
-    return "endpoint";
-  }
-  async update() {
-    return "endpoint";
-  }
-  async delete() {
-  }
-};
-
-// src/provider/aws/iot/endpoint.ts
-var Endpoint = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IoT::Endpoint", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-iot-endpoint";
-  get address() {
-    return this.output((v) => v.address);
-  }
-  toState() {
-    const type = {
-      jobs: "iot:Jobs",
-      data: "iot:Data",
-      "data-ats": "iot:Data-ATS",
-      "credential-provider": "iot:CredentialProvider"
-    }[unwrap(this.props.type)];
-    return {
-      document: {
-        endpointType: type
-      }
-    };
-  }
-};
-
-// src/provider/aws/iot/topic-rule.ts
-var TopicRule = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IoT::TopicRule", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    return {
-      document: {
-        RuleName: this.props.name,
-        TopicRulePayload: {
-          Sql: this.props.sql,
-          AwsIotSqlVersion: unwrap(this.props.sqlVersion, "2016-03-23"),
-          RuleDisabled: !unwrap(this.props.enabled, true),
-          Actions: unwrap(this.props.actions).map((action) => ({
-            Lambda: { FunctionArn: unwrap(unwrap(action).lambda).functionArn }
-          }))
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/index.ts
-var lambda_exports = {};
-__export(lambda_exports, {
-  EventInvokeConfig: () => EventInvokeConfig,
-  EventSourceMapping: () => EventSourceMapping,
-  Function: () => Function2,
-  Layer: () => Layer,
-  Permission: () => Permission,
-  SourceCodeUpdate: () => SourceCodeUpdate,
-  SourceCodeUpdateProvider: () => SourceCodeUpdateProvider,
-  Url: () => Url,
-  formatCode: () => formatCode
-});
-
-// src/provider/aws/lambda/code.ts
-var formatCode = (code) => {
-  if ("bucket" in code) {
-    return {
-      S3Bucket: code.bucket,
-      S3Key: code.key,
-      S3ObjectVersion: code.version
-    };
-  }
-  if ("imageUri" in code) {
-    return {
-      ImageUri: code.imageUri
-    };
-  }
-  return {
-    ZipFile: code.zipFile
-  };
-};
-
-// src/provider/aws/lambda/event-invoke-config.ts
-import { toSeconds as toSeconds7 } from "@awsless/duration";
-var EventInvokeConfig = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::EventInvokeConfig", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  setOnFailure(arn) {
-    this.props.onFailure = arn;
-    return this;
-  }
-  setOnSuccess(arn) {
-    this.props.onSuccess = arn;
-    return this;
-  }
-  toState() {
-    return {
-      document: {
-        FunctionName: this.props.functionArn,
-        Qualifier: unwrap(this.props.qualifier, "$LATEST"),
-        ...this.attr("MaximumEventAgeInSeconds", this.props.maxEventAge, toSeconds7),
-        ...this.attr("MaximumRetryAttempts", this.props.retryAttempts),
-        ...this.props.onFailure || this.props.onSuccess ? {
-          DestinationConfig: {
-            ...this.props.onFailure ? {
-              OnFailure: {
-                Destination: this.props.onFailure
-              }
-            } : {},
-            ...this.props.onSuccess ? {
-              OnSuccess: {
-                Destination: this.props.onSuccess
-              }
-            } : {}
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/event-source-mapping.ts
-import { toSeconds as toSeconds8 } from "@awsless/duration";
-import { constantCase as constantCase4 } from "change-case";
-var EventSourceMapping = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::EventSourceMapping", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  setOnFailure(arn) {
-    this.props.onFailure = arn;
-    return this;
-  }
-  toState() {
-    return {
-      document: {
-        Enabled: true,
-        FunctionName: this.props.functionArn,
-        EventSourceArn: this.props.sourceArn,
-        ...this.attr("BatchSize", this.props.batchSize),
-        ...this.attr("MaximumBatchingWindowInSeconds", this.props.maxBatchingWindow, toSeconds8),
-        ...this.attr("MaximumRecordAgeInSeconds", this.props.maxRecordAge, toSeconds8),
-        ...this.attr("MaximumRetryAttempts", this.props.retryAttempts),
-        ...this.attr("ParallelizationFactor", this.props.parallelizationFactor),
-        ...this.attr("TumblingWindowInSeconds", this.props.tumblingWindow, toSeconds8),
-        ...this.attr("BisectBatchOnFunctionError", this.props.bisectBatchOnError),
-        ...this.attr("StartingPosition", this.props.startingPosition, constantCase4),
-        ...this.attr("StartingPositionTimestamp", this.props.startingPositionTimestamp),
-        ...this.props.maxConcurrency ? {
-          ScalingConfig: {
-            MaximumConcurrency: this.props.maxConcurrency
-          }
-        } : {},
-        ...this.props.onFailure ? {
-          DestinationConfig: {
-            OnFailure: {
-              Destination: this.props.onFailure
-            }
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/function.ts
-import { seconds, toSeconds as toSeconds9 } from "@awsless/duration";
-import { mebibytes, toMebibytes } from "@awsless/size";
-import { constantCase as constantCase5 } from "change-case";
-var Function2 = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::Function", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  environmentVariables = {};
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get name() {
-    return this.output((v) => v.FunctionName);
-  }
-  addEnvironment(name, value) {
-    this.registerDependency(value);
-    this.environmentVariables[name] = value;
-    return this;
-  }
-  setVpc(vpc) {
-    this.props.vpc = vpc;
-    this.registerDependency(vpc);
-    return this;
-  }
-  get permissions() {
-    return {
-      actions: [
-        //
-        "lambda:InvokeFunction",
-        "lambda:InvokeAsync"
-      ],
-      resources: [this.arn]
-    };
-  }
-  // enableUrlAccess(props: Omit<UrlProps, 'targetArn'> = {}) {
-  // 	const url = new Url('url', {
-  // 		...props,
-  // 		targetArn: this.arn,
-  // 	})
-  // 	const permissions = new Permission('url', {
-  // 		principal: '*',
-  // 		// principal: 'cloudfront.amazonaws.com',
-  // 		// sourceArn: distribution.arn,
-  // 		action: 'lambda:InvokeFunctionUrl',
-  // 		functionArn: this.arn,
-  // 		urlAuthType: props.authType ?? 'none',
-  // 	})
-  // 	this.add(permissions)
-  // 	this.add(url)
-  // 	return url
-  // }
-  toState() {
-    if (unwrap(this.props.name).length > 64) {
-      throw new TypeError(`Lambda function name length can't be greater then 64. ${unwrap(this.props.name)}`);
-    }
-    const code = unwrap(this.props.code);
-    const nativeProps = {
-      Runtime: unwrap(this.props.runtime, "nodejs22.x"),
-      Handler: unwrap(this.props.handler, "index.default")
-    };
-    const containerProps = {
-      PackageType: "Image"
-    };
-    return {
-      document: {
-        FunctionName: this.props.name,
-        Description: this.props.description,
-        MemorySize: toMebibytes(unwrap(this.props.memorySize, mebibytes(128))),
-        Timeout: toSeconds9(unwrap(this.props.timeout, seconds(10))),
-        Architectures: [unwrap(this.props.architecture, "arm64")],
-        Role: this.props.role,
-        ...this.attr("ReservedConcurrentExecutions", this.props.reserved),
-        ..."imageUri" in code ? containerProps : nativeProps,
-        Code: formatCode(code),
-        EphemeralStorage: {
-          Size: toMebibytes(unwrap(this.props.ephemeralStorageSize, mebibytes(512)))
-        },
-        Layers: this.props.layers,
-        ...this.props.log ? {
-          LoggingConfig: {
-            LogFormat: unwrap(this.props.log).format === "text" ? "Text" : "JSON",
-            ApplicationLogLevel: constantCase5(unwrap(unwrap(this.props.log).level, "error")),
-            SystemLogLevel: constantCase5(unwrap(unwrap(this.props.log).system, "warn"))
-          }
-        } : {},
-        ...this.props.vpc ? {
-          VpcConfig: {
-            SecurityGroupIds: unwrap(this.props.vpc).securityGroupIds,
-            SubnetIds: unwrap(this.props.vpc).subnetIds
-          }
-        } : {},
-        Environment: {
-          Variables: {
-            ...unwrap(this.props.environment),
-            ...this.environmentVariables
-            // ...Object.fromEntries(
-            // 	Object.entries(this.environmentVariables).map(([key, values]) => [
-            // 		key,
-            // 		unwrap(values).join(','),
-            // 	])
-            // ),
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/layer.ts
-var Layer = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::LayerVersion", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.LayerVersionArn);
-  }
-  toState() {
-    if (unwrap(this.props.name).length > 140) {
-      throw new TypeError(`Layer function name length can't be greater then 140. ${unwrap(this.props.name)}`);
-    }
-    return {
-      document: {
-        LayerName: this.props.name,
-        Description: this.props.description,
-        Content: formatCode(unwrap(this.props.code)),
-        CompatibleArchitectures: unwrap(this.props.architectures),
-        CompatibleRuntimes: unwrap(this.props.runtimes)
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/permission.ts
-import { constantCase as constantCase6 } from "change-case";
-var Permission = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::Permission", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  toState() {
-    return {
-      document: {
-        FunctionName: this.props.functionArn,
-        Action: unwrap(this.props.action, "lambda:InvokeFunction"),
-        Principal: this.props.principal,
-        ...this.attr("SourceArn", this.props.sourceArn),
-        ...this.attr("FunctionUrlAuthType", this.props.urlAuthType, constantCase6)
-        // ...(this.props.sourceArn ? { SourceArn: this.props.sourceArn } : {}),
-        // ...(this.props.urlAuthType
-        // 	? { FunctionUrlAuthType: constantCase(unwrap(this.props.urlAuthType)) }
-        // 	: {}),
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/url.ts
-import { constantCase as constantCase7 } from "change-case";
-import { toSeconds as toSeconds10 } from "@awsless/duration";
-var Url = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::Url", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get url() {
-    return this.output((v) => v.FunctionUrl);
-  }
-  get domain() {
-    return this.url.apply((url) => url.split("/")[2]);
-  }
-  cors() {
-    const cors = unwrap(this.props.cors);
-    if (!cors) {
-      return {};
-    }
-    const allow = unwrap(cors.allow, {});
-    const expose = unwrap(cors.expose, {});
-    return {
-      ...this.attr("AllowCredentials", allow.credentials),
-      ...this.attr("AllowHeaders", allow.headers),
-      ...this.attr("AllowMethods", allow.methods),
-      ...this.attr("AllowOrigins", allow.origins),
-      ...this.attr("ExposeHeaders", expose.headers),
-      ...this.attr("MaxAge", cors.maxAge, toSeconds10)
-    };
-  }
-  toState() {
-    return {
-      document: {
-        AuthType: constantCase7(unwrap(this.props.authType, "none")),
-        InvokeMode: constantCase7(unwrap(this.props.invokeMode, "buffered")),
-        TargetFunctionArn: this.props.targetArn,
-        ...this.attr("Qualifier", this.props.qualifier),
-        Cors: this.cors()
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/source-code-update.ts
-var SourceCodeUpdate = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Lambda::SourceCodeUpdate", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-lambda-source-code-update";
-  toState() {
-    return {
-      assets: {
-        version: this.props.version
-      },
-      document: {
-        FunctionName: this.props.functionName,
-        Architectures: [unwrap(this.props.architecture, "arm64")],
-        Code: formatCode(unwrap(this.props.code))
-      }
-    };
-  }
-};
-
-// src/provider/aws/lambda/source-code-update-provider.ts
-import { LambdaClient, UpdateFunctionCodeCommand } from "@aws-sdk/client-lambda";
-var SourceCodeUpdateProvider = class {
-  client;
-  constructor(props) {
-    this.client = new LambdaClient(props);
-  }
-  own(id) {
-    return id === "aws-lambda-source-code-update";
-  }
-  async get() {
-    return {};
-  }
-  async create(props) {
-    return props.document.FunctionName;
-  }
-  async update(props) {
-    if (props.oldAssets.version !== props.newAssets.version?.hash) {
-      await this.updateFunctionCode(props);
-    }
-    return props.newDocument.FunctionName;
-  }
-  async delete() {
-  }
-  async updateFunctionCode(props) {
-    const code = props.newDocument.Code;
-    if ("ZipFile" in code) {
-      return;
-    }
-    await this.client.send(
-      new UpdateFunctionCodeCommand({
-        FunctionName: props.newDocument.FunctionName,
-        Architectures: props.newDocument.Architectures,
-        ...code
-      })
-    );
-  }
-};
-
-// src/provider/aws/route53/record-set-provider.ts
-import { ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, Route53Client } from "@aws-sdk/client-route-53";
-import { randomUUID as randomUUID2 } from "crypto";
-var RecordSetProvider = class {
-  client;
-  constructor(props) {
-    this.client = new Route53Client(props);
-  }
-  own(id) {
-    return id === "aws-route53-record-set";
-  }
-  async get({ id, document }) {
-    const result = await this.client.send(
-      new ListResourceRecordSetsCommand({
-        HostedZoneId: document.HostedZoneId,
-        MaxItems: 1,
-        StartRecordIdentifier: id,
-        StartRecordName: document.Name,
-        StartRecordType: document.Type
-      })
-    );
-    return result.ResourceRecordSets?.at(0);
-  }
-  formatRecordSet(id, document) {
-    return {
-      Name: document.Name,
-      Type: document.Type,
-      ResourceRecords: document.ResourceRecords?.map((Value) => ({ Value })),
-      Weight: document.Weight,
-      TTL: document.TTL,
-      SetIdentifier: id,
-      AliasTarget: document.AliasTarget
-    };
-  }
-  async create({ document }) {
-    const id = randomUUID2();
-    await this.client.send(
-      new ChangeResourceRecordSetsCommand({
-        HostedZoneId: document.HostedZoneId,
-        ChangeBatch: {
-          Changes: [
-            {
-              Action: "CREATE",
-              ResourceRecordSet: this.formatRecordSet(id, document)
-            }
-          ]
-        }
-      })
-    );
-    return id;
-  }
-  async update({ id, oldDocument, newDocument }) {
-    if (oldDocument.HostedZoneId !== newDocument.HostedZoneId) {
-      throw new Error(`RecordSet hosted zone id can't be changed after creation.`);
-    }
-    if (oldDocument.Name !== newDocument.Name) {
-      throw new Error(`RecordSet name id can't be changed after creation.`);
-    }
-    if (oldDocument.Type !== newDocument.Type) {
-      throw new Error(`RecordSet type can't be changed after creation.`);
-    }
-    await this.client.send(
-      new ChangeResourceRecordSetsCommand({
-        HostedZoneId: newDocument.HostedZoneId,
-        ChangeBatch: {
-          Changes: [
-            {
-              Action: "UPSERT",
-              ResourceRecordSet: this.formatRecordSet(id, newDocument)
-            }
-          ]
-        }
-      })
-    );
-    return id;
-  }
-  async delete({ id, document }) {
-    await this.client.send(
-      new ChangeResourceRecordSetsCommand({
-        HostedZoneId: document.HostedZoneId,
-        ChangeBatch: {
-          Changes: [
-            {
-              Action: "DELETE",
-              ResourceRecordSet: this.formatRecordSet(id, document)
-            }
-          ]
-        }
-      })
-    );
-  }
-};
-
-// src/provider/aws/s3/bucket-object-provider.ts
-import {
-  DeleteObjectCommand,
-  GetObjectAttributesCommand,
-  PutObjectCommand,
-  S3Client,
-  S3ServiceException
-} from "@aws-sdk/client-s3";
-var BucketObjectProvider = class {
-  client;
-  constructor(props) {
-    this.client = new S3Client(props);
-  }
-  own(id) {
-    return id === "aws-s3-bucket-object";
-  }
-  async get({ document }) {
-    const result = await this.client.send(
-      new GetObjectAttributesCommand({
-        Bucket: document.Bucket,
-        Key: document.Key,
-        ObjectAttributes: ["ETag", "Checksum"]
-      })
-    );
-    return {
-      VersionId: result.VersionId,
-      ETag: result.ETag,
-      Checksum: result.Checksum
-    };
-  }
-  async create({ document, assets }) {
-    await this.client.send(
-      new PutObjectCommand({
-        ...document,
-        Body: assets.body?.data
-      })
-    );
-    return JSON.stringify([document.Bucket, document.Key]);
-  }
-  async update({ oldDocument, newDocument, newAssets }) {
-    if (oldDocument.Bucket !== newDocument.Bucket) {
-      throw new Error(`BucketObject can't change the bucket name`);
-    }
-    if (oldDocument.Key !== newDocument.Key) {
-      throw new Error(`BucketObject can't change the key`);
-    }
-    await this.client.send(
-      new PutObjectCommand({
-        ...newDocument,
-        Body: newAssets.body?.data
-      })
-    );
-    return JSON.stringify([newDocument.Bucket, newDocument.Key]);
-  }
-  async delete({ document }) {
-    try {
-      await this.client.send(
-        new DeleteObjectCommand({
-          Bucket: document.Bucket,
-          Key: document.Key
-        })
-      );
-    } catch (error) {
-      if (error instanceof S3ServiceException) {
-        if (error.name === "NoSuchBucket") {
-          return;
-        }
-      }
-      throw error;
-    }
-  }
-};
-
-// src/provider/aws/s3/bucket-provider.ts
-import {
-  DeleteObjectsCommand,
-  ListObjectsV2Command,
-  ListObjectVersionsCommand,
-  S3Client as S3Client2,
-  S3ServiceException as S3ServiceException2
-} from "@aws-sdk/client-s3";
-var BucketProvider = class {
-  client;
-  cloudProvider;
-  constructor(props) {
-    this.client = new S3Client2(props);
-    this.cloudProvider = props.cloudProvider;
-  }
-  own(id) {
-    return id === "aws-s3-bucket";
-  }
-  async get(props) {
-    return this.cloudProvider.get(props);
-  }
-  async create(props) {
-    return this.cloudProvider.create(props);
-  }
-  async update(props) {
-    return this.cloudProvider.update(props);
-  }
-  async delete(props) {
-    if (props.extra.forceDelete) {
-      await this.emptyBucket(props.document.BucketName);
-    }
-    return this.cloudProvider.delete(props);
-  }
-  async emptyBucket(bucket) {
-    try {
-      await Promise.all([
-        //
-        this.deleteBucketObjects(bucket),
-        this.deleteBucketObjectVersions(bucket)
-      ]);
-    } catch (error) {
-      if (error instanceof S3ServiceException2) {
-        if (error.name === "NoSuchBucket") {
-          return;
-        }
-      }
-      throw error;
-    }
-  }
-  async deleteBucketObjects(bucket) {
-    while (true) {
-      const result = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: bucket,
-          MaxKeys: 1e3
-        })
-      );
-      if (!result.Contents || result.Contents.length === 0) {
-        break;
-      }
-      await this.client.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: {
-            Objects: result.Contents.map((object) => ({
-              Key: object.Key
-            }))
-          }
-        })
-      );
-    }
-  }
-  async deleteBucketObjectVersions(bucket) {
-    while (true) {
-      const result = await this.client.send(
-        new ListObjectVersionsCommand({
-          Bucket: bucket,
-          MaxKeys: 1e3
-        })
-      );
-      const objects = [...result.DeleteMarkers ?? [], ...result.Versions ?? []];
-      if (objects.length === 0) {
-        break;
-      }
-      await this.client.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: {
-            Objects: objects.map((object) => ({
-              Key: object.Key,
-              VersionId: object.VersionId
-            }))
-          }
-        })
-      );
-    }
-  }
-};
-
-// src/provider/aws/sns/subscription-provider.ts
-import { GetSubscriptionAttributesCommand, SNSClient, SubscribeCommand, UnsubscribeCommand } from "@aws-sdk/client-sns";
-var SubscriptionProvider = class {
-  client;
-  constructor(props) {
-    this.client = new SNSClient(props);
-  }
-  own(id) {
-    return id === "aws-sns-subscription";
-  }
-  async get({ id }) {
-    const result = await this.client.send(
-      new GetSubscriptionAttributesCommand({
-        SubscriptionArn: id
-      })
-    );
-    return result.Attributes;
-  }
-  async create({ document }) {
-    const result = await this.client.send(
-      new SubscribeCommand({
-        ...document,
-        ReturnSubscriptionArn: true
-      })
-    );
-    return result.SubscriptionArn;
-  }
-  async update({}) {
-    throw new Error(`SNS Subscription can't be changed after creation.`);
-    return "";
-  }
-  async delete({ id }) {
-    await this.client.send(
-      new UnsubscribeCommand({
-        SubscriptionArn: id
-      })
-    );
-  }
-};
-
-// src/provider/aws/cloud.ts
-var createCloudProviders = (config) => {
-  const cloudControlApiProvider = new CloudControlApiProvider(config);
-  return [
-    //
-    cloudControlApiProvider,
-    new ImageProvider(config),
-    new InstanceProvider(config),
-    new SourceCodeUpdateProvider(config),
-    new BucketProvider({ ...config, cloudProvider: cloudControlApiProvider }),
-    new BucketObjectProvider(config),
-    new TableItemProvider(config),
-    new EndpointProvider(config),
-    new RecordSetProvider(config),
-    new CertificateProvider(config),
-    new CertificateValidationProvider(config),
-    new IntegrationProvider(config),
-    new StageProvider(config),
-    new GraphQLApiProvider(config),
-    new GraphQLSchemaProvider(config),
-    new DataSourceProvider(config),
-    new SubscriptionProvider(config),
-    new InvalidateCacheProvider(config),
-    new LambdaTriggersProvider(config)
-  ];
-};
-
-// src/provider/aws/cloud-watch/index.ts
-var cloud_watch_exports = {};
-__export(cloud_watch_exports, {
-  LogGroup: () => LogGroup,
-  SubscriptionFilter: () => SubscriptionFilter
-});
-
-// src/provider/aws/cloud-watch/log-group.ts
-import { toDays as toDays2 } from "@awsless/duration";
-var LogGroup = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Logs::LogGroup", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get name() {
-    return this.output((v) => v.LogGroupName);
-  }
-  get permissions() {
-    return [
-      {
-        actions: ["logs:CreateLogStream"],
-        resources: [this.arn]
-      },
-      {
-        actions: ["logs:PutLogEvents"],
-        resources: [this.arn.apply((arn) => `${arn}:*`)]
-      }
-    ];
-  }
-  toState() {
-    return {
-      document: {
-        LogGroupName: this.props.name,
-        ...this.attr("RetentionInDays", this.props.retention && toDays2(unwrap(this.props.retention)))
-        // KmsKeyId: String
-        // DataProtectionPolicy : Json,
-      }
-    };
-  }
-};
-
-// src/provider/aws/cloud-watch/subscription-filter.ts
-var SubscriptionFilter = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Logs::SubscriptionFilter", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.LogGroupName);
-  }
-  toState() {
-    return {
-      document: {
-        FilterName: this.props.name,
-        LogGroupName: this.props.logGroupName,
-        DestinationArn: this.props.destinationArn,
-        FilterPattern: this.props.filterPattern,
-        Distribution: unwrap(this.props.distribution, "ByLogStream")
-      }
-    };
-  }
-};
-
-// src/provider/aws/cognito/index.ts
-var cognito_exports = {};
-__export(cognito_exports, {
-  LambdaTriggers: () => LambdaTriggers,
-  LambdaTriggersProvider: () => LambdaTriggersProvider,
-  UserPool: () => UserPool,
-  UserPoolClient: () => UserPoolClient,
-  UserPoolDomain: () => UserPoolDomain
-});
-
-// src/provider/aws/cognito/user-pool-client.ts
-import { toDays as toDays3, toHours, toMinutes } from "@awsless/duration";
-var UserPoolClient = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Cognito::UserPoolClient", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.ClientId);
-  }
-  get name() {
-    return this.output((v) => v.ClientName);
-  }
-  get userPoolId() {
-    return this.output((v) => v.UserPoolId);
-  }
-  formatAuthFlows() {
-    const authFlows = [];
-    const props = unwrap(this.props.authFlows);
-    if (unwrap(props?.userPassword)) {
-      authFlows.push("ALLOW_USER_PASSWORD_AUTH");
-    }
-    if (unwrap(props?.adminUserPassword)) {
-      authFlows.push("ALLOW_ADMIN_USER_PASSWORD_AUTH");
-    }
-    if (unwrap(props?.custom)) {
-      authFlows.push("ALLOW_CUSTOM_AUTH");
-    }
-    if (unwrap(props?.userSrp)) {
-      authFlows.push("ALLOW_USER_SRP_AUTH");
-    }
-    authFlows.push("ALLOW_REFRESH_TOKEN_AUTH");
-    return authFlows;
-  }
-  formatIdentityProviders() {
-    const supported = unwrap(this.props.supportedIdentityProviders, []).map((v) => unwrap(v));
-    const providers = [];
-    if (supported.length === 0) {
-      return void 0;
-    }
-    if (supported.includes("amazon")) {
-      providers.push("LoginWithAmazon");
-    }
-    if (supported.includes("apple")) {
-      providers.push("SignInWithApple");
-    }
-    if (supported.includes("cognito")) {
-      providers.push("COGNITO");
-    }
-    if (supported.includes("facebook")) {
-      providers.push("Facebook");
-    }
-    if (supported.includes("google")) {
-      providers.push("Google");
-    }
-    return providers;
-  }
-  toState() {
-    const validity = unwrap(this.props.validity, {});
-    return {
-      document: {
-        ClientName: this.props.name,
-        UserPoolId: this.props.userPoolId,
-        ExplicitAuthFlows: this.formatAuthFlows(),
-        EnableTokenRevocation: unwrap(this.props.enableTokenRevocation, false),
-        GenerateSecret: unwrap(this.props.generateSecret, false),
-        PreventUserExistenceErrors: unwrap(this.props.preventUserExistenceErrors, true) ? "ENABLED" : "LEGACY",
-        ...this.attr("SupportedIdentityProviders", this.formatIdentityProviders()),
-        // AllowedOAuthFlows: ['code'],
-        // AllowedOAuthScopes: ['openid'],
-        // AllowedOAuthFlowsUserPoolClient: true,
-        // CallbackURLs: ['https://example.com'],
-        // LogoutURLs: ['https://example.com'],
-        // DefaultRedirectURI: String
-        // EnablePropagateAdditionalUserContextData
-        ...this.attr("ReadAttributes", this.props.readAttributes),
-        ...this.attr("WriteAttributes", this.props.writeAttributes),
-        ...this.attr(
-          "AuthSessionValidity",
-          validity.authSession && toMinutes(unwrap(validity.authSession))
-        ),
-        ...this.attr("AccessTokenValidity", validity.accessToken && toHours(unwrap(validity.accessToken))),
-        ...this.attr("IdTokenValidity", validity.idToken && toHours(unwrap(validity.idToken))),
-        ...this.attr(
-          "RefreshTokenValidity",
-          validity.refreshToken && toDays3(unwrap(validity.refreshToken))
-        ),
-        TokenValidityUnits: {
-          ...this.attr("AccessToken", validity.accessToken && "hours"),
-          ...this.attr("IdToken", validity.idToken && "hours"),
-          ...this.attr("RefreshToken", validity.refreshToken && "days")
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cognito/user-pool-domain.ts
-var UserPoolDomain = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Cognito::UserPoolDomain", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  // get domain() {
-  // 	return this.ref()
-  // }
-  // get cloudFrontDistribution() {
-  // 	return this.getAtt('CloudFrontDistribution')
-  // }
-  toState() {
-    return {
-      document: {
-        UserPoolId: this.props.userPoolId,
-        Domain: this.props.domain
-      }
-    };
-  }
-};
-
-// src/provider/aws/cognito/user-pool.ts
-import { constantCase as constantCase8 } from "change-case";
-import { days as days2, toDays as toDays4 } from "@awsless/duration";
-var UserPool = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Cognito::UserPool", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.UserPoolId);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get providerName() {
-    return this.output((v) => v.ProviderName);
-  }
-  get providerUrl() {
-    return this.output((v) => v.ProviderURL);
-  }
-  // addDomain(props: Omit<UserPoolDomainProps, 'userPoolId'>) {
-  // 	const domain = new UserPoolDomain(this.logicalId, {
-  // 		...props,
-  // 		userPoolId: this.id,
-  // 	}).dependsOn(this)
-  // 	this.addChild(domain)
-  // 	return domain
-  // }
-  addClient(id, props) {
-    const client = new UserPoolClient(this, id, {
-      ...props,
-      userPoolId: this.id
-    });
-    return client;
-  }
-  toState() {
-    const email = unwrap(this.props.email);
-    const username = unwrap(this.props.username);
-    const password = unwrap(this.props.password);
-    return {
-      document: {
-        UserPoolName: this.props.name,
-        DeletionProtection: unwrap(this.props.deletionProtection) ? "ACTIVE" : "INACTIVE",
-        AccountRecoverySetting: {
-          RecoveryMechanisms: [{ Name: "verified_email", Priority: 1 }]
-        },
-        // UserPoolTags: [],
-        ...unwrap(username?.emailAlias) ? {
-          AliasAttributes: ["email"],
-          // UsernameAttributes: [ 'email' ],
-          AutoVerifiedAttributes: ["email"],
-          Schema: [
-            {
-              AttributeDataType: "String",
-              Name: "email",
-              Required: false,
-              Mutable: false,
-              StringAttributeConstraints: {
-                MinLength: "5",
-                MaxLength: "100"
-              }
-            }
-          ]
-        } : {},
-        UsernameConfiguration: {
-          CaseSensitive: unwrap(username?.caseSensitive, false)
-        },
-        ...this.attr(
-          "EmailConfiguration",
-          email && {
-            ...this.attr("EmailSendingAccount", email.type, constantCase8),
-            ...this.attr("From", email.from),
-            ...this.attr("ReplyToEmailAddress", email.replyTo),
-            ...this.attr("SourceArn", email.sourceArn),
-            ...this.attr("ConfigurationSet", email.configurationSet)
-          }
-        ),
-        DeviceConfiguration: {
-          DeviceOnlyRememberedOnUserPrompt: false
-        },
-        AdminCreateUserConfig: {
-          AllowAdminCreateUserOnly: !unwrap(this.props.allowUserRegistration, true)
-        },
-        Policies: {
-          PasswordPolicy: {
-            MinimumLength: unwrap(password?.minLength, 12),
-            RequireUppercase: unwrap(password?.uppercase, false),
-            RequireLowercase: unwrap(password?.lowercase, false),
-            RequireNumbers: unwrap(password?.numbers, false),
-            RequireSymbols: unwrap(password?.symbols, false),
-            TemporaryPasswordValidityDays: toDays4(
-              unwrap(password?.temporaryPasswordValidity, days2(7))
-            )
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/cognito/lambda-triggers.ts
-var LambdaTriggers = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Cognito::UserPoolLambdaConfig", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-cognito-lambda-triggers";
-  toState() {
-    const triggers = unwrap(this.props.triggers);
-    return {
-      document: {
-        UserPoolId: this.props.userPoolId,
-        LambdaConfig: {
-          ...this.attr("PreAuthentication", triggers?.beforeLogin),
-          ...this.attr("PostAuthentication", triggers?.afterLogin),
-          ...this.attr("PostConfirmation", triggers?.afterRegister),
-          ...this.attr("PreSignUp", triggers?.beforeRegister),
-          ...this.attr("PreTokenGeneration", triggers?.beforeToken),
-          ...this.attr("CustomMessage", triggers?.customMessage),
-          ...this.attr("UserMigration", triggers?.userMigration),
-          ...this.attr("DefineAuthChallenge", triggers?.defineChallange),
-          ...this.attr("CreateAuthChallenge", triggers?.createChallange),
-          ...this.attr("VerifyAuthChallengeResponse", triggers?.verifyChallange)
-          // ...(triggers?.emailSender
-          // 	? {
-          // 			CustomEmailSender: {
-          // 				LambdaArn: triggers.emailSender,
-          // 				LambdaVersion: 'V1_0',
-          // 			},
-          // 	  }
-          // 	: {}),
-          // ...(triggers?.smsSender
-          // 	? {
-          // 			CustomSMSSender: {
-          // 				LambdaArn: triggers.smsSender,
-          // 				LambdaVersion: 'V1_0',
-          // 			},
-          // 	  }
-          // 	: {}),
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/dynamodb/index.ts
-var dynamodb_exports = {};
-__export(dynamodb_exports, {
-  LockProvider: () => LockProvider,
-  Table: () => Table,
-  TableItem: () => TableItem,
-  TableItemProvider: () => TableItemProvider
-});
-
-// src/provider/aws/dynamodb/lock-provider.ts
-import { DynamoDB as DynamoDB2, GetItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall as marshall2, unmarshall } from "@aws-sdk/util-dynamodb";
-var LockProvider = class {
-  constructor(props) {
-    this.props = props;
-    this.client = new DynamoDB2(props);
-  }
-  client;
-  async insecureReleaseLock(urn) {
-    await this.client.send(
-      new UpdateItemCommand({
-        TableName: this.props.tableName,
-        Key: marshall2({ urn }),
-        ExpressionAttributeNames: { "#lock": "lock" },
-        UpdateExpression: "REMOVE #lock"
-      })
-    );
-  }
-  async locked(urn) {
-    const result = await this.client.send(
-      new GetItemCommand({
-        TableName: this.props.tableName,
-        Key: marshall2({ urn })
-      })
-    );
-    if (!result.Item) {
-      return false;
-    }
-    const item = unmarshall(result.Item);
-    return typeof item.lock === "number";
-  }
-  async lock(urn) {
-    const id = Math.floor(Math.random() * 1e5);
-    const props = {
-      TableName: this.props.tableName,
-      Key: marshall2({ urn }),
-      ExpressionAttributeNames: { "#lock": "lock" },
-      ExpressionAttributeValues: { ":id": marshall2(id) }
-    };
-    await this.client.send(
-      new UpdateItemCommand({
-        ...props,
-        UpdateExpression: "SET #lock = :id",
-        ConditionExpression: "attribute_not_exists(#lock)"
-      })
-    );
-    return async () => {
-      await this.client.send(
-        new UpdateItemCommand({
-          ...props,
-          UpdateExpression: "REMOVE #lock",
-          ConditionExpression: "#lock = :id"
-        })
-      );
-    };
-  }
-};
-
-// src/provider/aws/dynamodb/table-item.ts
-var TableItem = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::DynamoDB::Table::Item", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-dynamodb-table-item";
-  toState() {
-    const table = this.props.table;
-    return {
-      assets: {
-        item: this.props.item
-      },
-      document: {
-        table: table.name,
-        hash: table.hash,
-        sort: table.sort
-      }
-    };
-  }
-};
-
-// src/provider/aws/dynamodb/table.ts
-import { constantCase as constantCase9 } from "change-case";
-var Table = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::DynamoDB::Table", id, props);
-    this.parent = parent;
-    this.props = props;
-    this.indexes = { ...this.props.indexes || {} };
-  }
-  indexes;
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get streamArn() {
-    return this.output((v) => v.StreamArn);
-  }
-  get name() {
-    return this.output((v) => v.TableName);
-  }
-  get hash() {
-    return this.output(() => unwrap(this.props.hash));
-  }
-  get sort() {
-    return this.output(() => unwrap(this.props.sort));
-  }
-  enableStream(viewType) {
-    this.props.stream = viewType;
-  }
-  addIndex(name, props) {
-    this.indexes[name] = props;
-  }
-  addItem(id, item) {
-    return new TableItem(this, id, {
-      table: this,
-      item
-    });
-  }
-  get streamPermissions() {
-    return {
-      actions: [
-        "dynamodb:ListStreams",
-        "dynamodb:DescribeStream",
-        "dynamodb:GetRecords",
-        "dynamodb:GetShardIterator"
-      ],
-      resources: [this.streamArn]
-    };
-  }
-  get permissions() {
-    const permissions = [
-      {
-        actions: [
-          "dynamodb:DescribeTable",
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:TransactWrite",
-          "dynamodb:BatchWriteItem",
-          "dynamodb:BatchGetItem",
-          "dynamodb:ConditionCheckItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ],
-        resources: [this.arn]
-      }
-    ];
-    const indexNames = Object.keys(this.indexes ?? {});
-    if (indexNames.length > 0) {
-      permissions.push({
-        actions: ["dynamodb:Query"],
-        resources: indexNames.map((indexName) => this.arn.apply((arn) => `${arn}/index/${indexName}`))
-      });
-    }
-    return permissions;
-  }
-  attributeDefinitions() {
-    const fields = unwrap(this.props.fields, {});
-    const attributes = new Set(
-      [
-        this.props.hash,
-        this.props.sort,
-        ...Object.values(this.props.indexes ?? {}).map((index) => [index.hash, index.sort])
-      ].flat().filter(Boolean)
-    );
-    const types = {
-      string: "S",
-      number: "N",
-      binary: "B"
-    };
-    return [...attributes].map((name) => ({
-      AttributeName: name,
-      AttributeType: types[unwrap(fields[name], "string")]
-    }));
-  }
-  toState() {
-    return {
-      document: {
-        TableName: this.props.name,
-        BillingMode: "PAY_PER_REQUEST",
-        KeySchema: [
-          { KeyType: "HASH", AttributeName: this.props.hash },
-          ...this.props.sort ? [{ KeyType: "RANGE", AttributeName: this.props.sort }] : []
-        ],
-        AttributeDefinitions: this.attributeDefinitions(),
-        TableClass: constantCase9(unwrap(this.props.class, "standard")),
-        DeletionProtectionEnabled: unwrap(this.props.deletionProtection, false),
-        PointInTimeRecoverySpecification: {
-          PointInTimeRecoveryEnabled: unwrap(this.props.pointInTimeRecovery, false)
-        },
-        ...this.props.timeToLiveAttribute ? {
-          TimeToLiveSpecification: {
-            AttributeName: this.props.timeToLiveAttribute,
-            Enabled: true
-          }
-        } : {},
-        ...this.props.stream ? {
-          StreamSpecification: {
-            StreamViewType: constantCase9(unwrap(this.props.stream))
-          }
-        } : {},
-        ...Object.keys(this.indexes).length ? {
-          GlobalSecondaryIndexes: Object.entries(this.indexes).map(([name, props]) => ({
-            IndexName: name,
-            KeySchema: [
-              { KeyType: "HASH", AttributeName: props.hash },
-              ...props.sort ? [{ KeyType: "RANGE", AttributeName: props.sort }] : []
-            ],
-            Projection: {
-              ProjectionType: constantCase9(props.projection || "all")
-            }
-          }))
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/ecs/index.ts
-var ecs_exports = {};
-__export(ecs_exports, {
-  Cluster: () => Cluster,
-  Service: () => Service
-});
-
-// src/provider/aws/ecs/cluster.ts
-var Cluster = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ECS::Cluster", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.ClusterName);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    const log = unwrap(this.props.log);
-    return {
-      document: {
-        ClusterName: this.props.name,
-        ClusterSettings: [
-          {
-            Name: "containerInsights",
-            Value: unwrap(this.props.containerInsights, false) ? "enabled" : "disabled"
-          }
-        ],
-        Configuration: {
-          ExecuteCommandConfiguration: log ? {
-            Logging: "DEFAULT",
-            LogConfiguration: log.provider === "cloudwatch" ? {
-              CloudWatchLogGroupName: log.groupName
-            } : {
-              S3BucketName: log.bucketName,
-              S3KeyPrefix: log.keyPrefix
-            }
-          } : {
-            Logging: "NONE"
-          }
-        }
-        // CapacityProviders: - String
-        // DefaultCapacityProviderStrategy:
-        // 	- CapacityProviderStrategyItem
-        // ServiceConnectDefaults:
-        // 	ServiceConnectDefaults
-      }
-    };
-  }
-};
-
-// src/provider/aws/ecs/service.ts
-var Service = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ECS::Service", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.ServiceName);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    const log = unwrap(this.props.log);
-    return {
-      document: {
-        ClusterName: this.props.name,
-        ClusterSettings: [
-          {
-            Name: "containerInsights",
-            Value: unwrap(this.props.containerInsights, false) ? "enabled" : "disabled"
-          }
-        ],
-        Configuration: {
-          ExecuteCommandConfiguration: log ? {
-            Logging: "DEFAULT",
-            LogConfiguration: log.provider === "cloudwatch" ? {
-              CloudWatchLogGroupName: log.groupName
-            } : {
-              S3BucketName: log.bucketName,
-              S3KeyPrefix: log.keyPrefix
-            }
-          } : {
-            Logging: "NONE"
-          }
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/index.ts
-var elb_exports = {};
-__export(elb_exports, {
-  AuthCognitoAction: () => AuthCognitoAction,
-  FixedResponseAction: () => FixedResponseAction,
-  ForwardAction: () => ForwardAction,
-  HttpRequestMethods: () => HttpRequestMethods,
-  Listener: () => Listener,
-  ListenerAction: () => ListenerAction,
-  ListenerCondition: () => ListenerCondition,
-  ListenerRule: () => ListenerRule,
-  LoadBalancer: () => LoadBalancer,
-  PathPattern: () => PathPattern,
-  TargetGroup: () => TargetGroup
-});
-
-// src/provider/aws/elb/listener-action.ts
-import { days as days3, toSeconds as toSeconds11 } from "@awsless/duration";
-var ListenerAction = class {
-  static authCognito(props) {
-    return new AuthCognitoAction(props);
-  }
-  static fixedResponse(props) {
-    return new FixedResponseAction(props);
-  }
-  static forward(targets) {
-    return new ForwardAction({
-      targetGroups: targets
-    });
-  }
-};
-var ForwardAction = class extends ListenerAction {
-  constructor(props) {
-    super();
-    this.props = props;
-  }
-  toJSON() {
-    return {
-      Type: "forward",
-      ForwardConfig: {
-        TargetGroups: unwrap(this.props.targetGroups).map((target) => ({
-          TargetGroupArn: target
-        }))
-      }
-    };
-  }
-};
-var FixedResponseAction = class extends ListenerAction {
-  constructor(props) {
-    super();
-    this.props = props;
-  }
-  toJSON() {
-    return {
-      Type: "fixed-response",
-      FixedResponseConfig: {
-        StatusCode: unwrap(this.props.statusCode).toString(),
-        ...this.props.contentType ? { ContentType: this.props.contentType } : {},
-        ...this.props.messageBody ? { MessageBody: this.props.messageBody } : {}
-      }
-    };
-  }
-};
-var AuthCognitoAction = class extends ListenerAction {
-  constructor(props) {
-    super();
-    this.props = props;
-  }
-  toJSON() {
-    const session = unwrap(this.props.session, {});
-    const userPool = unwrap(this.props.userPool);
-    return {
-      Type: "authenticate-cognito",
-      AuthenticateCognitoConfig: {
-        OnUnauthenticatedRequest: unwrap(this.props.onUnauthenticated, "deny"),
-        Scope: unwrap(this.props.scope, "openid"),
-        SessionCookieName: unwrap(session.cookieName, "AWSELBAuthSessionCookie"),
-        SessionTimeout: toSeconds11(unwrap(session.timeout, days3(7))),
-        UserPoolArn: userPool.arn,
-        UserPoolClientId: userPool.clientId,
-        UserPoolDomain: userPool.domain
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/listener-condition.ts
-var ListenerCondition = class {
-  static httpRequestMethods(methods) {
-    return new HttpRequestMethods({ methods });
-  }
-  static pathPatterns(paths) {
-    return new PathPattern({ paths });
-  }
-};
-var HttpRequestMethods = class extends ListenerCondition {
-  constructor(props) {
-    super();
-    this.props = props;
-  }
-  toJSON() {
-    return {
-      Field: "http-request-method",
-      HttpRequestMethodConfig: {
-        Values: this.props.methods
-      }
-    };
-  }
-};
-var PathPattern = class extends ListenerCondition {
-  constructor(props) {
-    super();
-    this.props = props;
-  }
-  toJSON() {
-    return {
-      Field: "path-pattern",
-      PathPatternConfig: {
-        Values: this.props.paths
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/listener-rule.ts
-var ListenerRule = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ElasticLoadBalancingV2::ListenerRule", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.RuleArn);
-  }
-  toState() {
-    return {
-      document: {
-        ListenerArn: this.props.listenerArn,
-        Priority: this.props.priority,
-        Conditions: unwrap(this.props.conditions).map((v) => unwrap(v)).map((condition) => condition.toJSON()),
-        Actions: unwrap(this.props.actions).map((v) => unwrap(v)).map((action, i) => {
-          return {
-            Order: i + 1,
-            ...action.toJSON()
-          };
-        })
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/listener.ts
-import { constantCase as constantCase10 } from "change-case";
-var Listener = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ElasticLoadBalancingV2::Listener", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.ListenerArn);
-  }
-  toState() {
-    return {
-      document: {
-        LoadBalancerArn: this.props.loadBalancerArn,
-        Port: this.props.port,
-        Protocol: constantCase10(unwrap(this.props.protocol)),
-        Certificates: unwrap(this.props.certificates).map((arn) => ({
-          CertificateArn: arn
-        })),
-        ...this.attr(
-          "DefaultActions",
-          this.props.defaultActions && unwrap(this.props.defaultActions).map((action, i) => {
-            return {
-              Order: i + 1,
-              ...unwrap(action).toJSON()
-            };
-          })
-        )
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/load-balancer.ts
-var LoadBalancer = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ElasticLoadBalancingV2::LoadBalancer", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.LoadBalancerArn);
-  }
-  get name() {
-    return this.output((v) => v.LoadBalancerName);
-  }
-  get dnsName() {
-    return this.output((v) => v.DNSName);
-  }
-  get fullName() {
-    return this.output((v) => v.LoadBalancerFullName);
-  }
-  get hostedZoneId() {
-    return this.output((v) => v.CanonicalHostedZoneID);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        Type: this.props.type,
-        Scheme: unwrap(this.props.schema, "internet-facing"),
-        SecurityGroups: this.props.securityGroups,
-        Subnets: this.props.subnets
-      }
-    };
-  }
-};
-
-// src/provider/aws/elb/target-group.ts
-var TargetGroup = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::ElasticLoadBalancingV2::TargetGroup", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.TargetGroupArn);
-  }
-  get fullName() {
-    return this.output((v) => v.TargetGroupFullName);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        TargetType: this.props.type,
-        Targets: unwrap(this.props.targets).map((target) => ({
-          Id: target
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/events/index.ts
-var events_exports = {};
-__export(events_exports, {
-  Rule: () => Rule
-});
-
-// src/provider/aws/events/rule.ts
-var Rule = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Events::Rule", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        ...this.attr("State", this.props.enabled ? "ENABLED" : "DISABLED"),
-        ...this.attr("Description", this.props.description),
-        ...this.attr("ScheduleExpression", this.props.schedule),
-        ...this.attr("RoleArn", this.props.roleArn),
-        ...this.attr("EventBusName", this.props.eventBusName),
-        ...this.attr("EventPattern", this.props.eventPattern),
-        Targets: unwrap(this.props.targets).map((v) => unwrap(v)).map((target) => ({
-          Arn: target.arn,
-          Id: target.id,
-          ...this.attr("Input", unwrap(target.input) && JSON.stringify(unwrap(target.input)))
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/iam/index.ts
-var iam_exports = {};
-__export(iam_exports, {
-  InstanceProfile: () => InstanceProfile,
-  Role: () => Role,
-  RolePolicy: () => RolePolicy,
-  formatPolicyDocument: () => formatPolicyDocument,
-  formatStatement: () => formatStatement,
-  fromAwsManagedPolicyName: () => fromAwsManagedPolicyName
-});
-
-// src/provider/aws/iam/instance-profile.ts
-var InstanceProfile = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IAM::InstanceProfile", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get name() {
-    return this.output((v) => v.RoleName);
-  }
-  toState() {
-    return {
-      document: {
-        ...this.attr("InstanceProfileName", this.props.name),
-        ...this.attr("Path", this.props.path),
-        Roles: this.props.roles
-      }
-    };
-  }
-};
-
-// src/provider/aws/iam/managed-policy.ts
-var fromAwsManagedPolicyName = (name) => {
-  return `arn:aws:iam::aws:policy/service-role/${name}`;
-};
-
-// src/provider/aws/iam/role-policy.ts
-import { capitalCase } from "change-case";
-var formatPolicyDocument = (policy) => ({
-  PolicyName: policy.name,
-  PolicyDocument: {
-    Version: unwrap(policy.version, "2012-10-17"),
-    Statement: unwrap(policy.statements, []).map((v) => unwrap(v)).map(formatStatement)
-  }
-});
-var formatStatement = (statement) => ({
-  Effect: capitalCase(unwrap(statement.effect, "allow")),
-  Action: statement.actions,
-  Resource: statement.resources
-});
-var RolePolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IAM::RolePolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  statements = [];
-  get id() {
-    return this.output((v) => v.PolicyId);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get name() {
-    return this.output((v) => v.PolicyName);
-  }
-  addStatement(...statements) {
-    this.registerDependency(statements);
-    this.statements.push(...statements);
-    return this;
-  }
-  toState() {
-    return {
-      document: {
-        RoleName: this.props.role,
-        ...formatPolicyDocument({
-          ...this.props,
-          statements: [...unwrap(this.props.statements, []), ...unwrap(this.statements, [])]
-        })
-      }
-    };
-  }
-};
-
-// src/provider/aws/iam/role.ts
-var Role = class extends CloudControlApiResource {
-  constructor(parent, id, props = {}) {
-    super(parent, "AWS::IAM::Role", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  inlinePolicies = [];
-  managedPolicies = /* @__PURE__ */ new Set();
-  get id() {
-    return this.output((v) => v.RoleId);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get name() {
-    return this.output((v) => v.RoleName);
-  }
-  addManagedPolicy(...policies) {
-    this.registerDependency(policies);
-    for (const arn of policies) {
-      this.managedPolicies.add(arn);
-    }
-    return this;
-  }
-  addInlinePolicy(...policies) {
-    this.registerDependency(policies);
-    for (const policy of policies) {
-      this.inlinePolicies.push(policy);
-    }
-    return this;
-  }
-  addPolicy(id, props) {
-    return new RolePolicy(this, id, {
-      role: this.name,
-      ...props
-    });
-  }
-  toState() {
-    return {
-      document: {
-        ...this.attr("RoleName", this.props.name),
-        ...this.attr("Path", this.props.path),
-        ManagedPolicyArns: [...this.managedPolicies],
-        Policies: [...unwrap(this.props.policies, []), ...this.inlinePolicies].map(
-          (policy) => formatPolicyDocument(policy)
-        ),
-        ...this.props.assumedBy ? {
-          AssumeRolePolicyDocument: {
-            Version: "2012-10-17",
-            Statement: [
-              {
-                Action: ["sts:AssumeRole"],
-                Effect: "Allow",
-                Principal: {
-                  Service: [this.props.assumedBy]
-                }
-              }
-            ]
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/ivs/index.ts
-var ivs_exports = {};
-__export(ivs_exports, {
-  Channel: () => Channel,
-  StreamKey: () => StreamKey
-});
-
-// src/provider/aws/ivs/channel.ts
-import { constantCase as constantCase11 } from "change-case";
-var Channel = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IVS::Channel", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get ingestEndpoint() {
-    return this.output((v) => v.IngestEndpoint);
-  }
-  get playbackUrl() {
-    return this.output((v) => v.PlaybackUrl);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        Type: constantCase11(unwrap(this.props.type, "standard")),
-        LatencyMode: constantCase11(unwrap(this.props.latencyMode, "low")),
-        ...this.attr("Preset", this.props.preset, (v) => `${v.toUpperCase()}_BANDWIDTH_DELIVERY`),
-        ...this.attr("Authorized", this.props.authorized),
-        ...this.attr("InsecureIngest", this.props.insecureIngest),
-        Tags: Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-          Key: k,
-          Value: v
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/ivs/stream-key.ts
-var StreamKey = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::IVS::StreamKey", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get value() {
-    return this.output((v) => v.Value);
-  }
-  toState() {
-    return {
-      document: {
-        ChannelArn: this.props.channel,
-        Tags: Object.entries(unwrap(this.props.tags, {})).map(([k, v]) => ({
-          Key: k,
-          Value: v
-        }))
-      }
-    };
-  }
-};
-
-// src/provider/aws/memorydb/index.ts
-var memorydb_exports = {};
-__export(memorydb_exports, {
-  Cluster: () => Cluster2,
-  SubnetGroup: () => SubnetGroup
-});
-
-// src/provider/aws/util.ts
-var formatTags = (tags) => {
-  return Object.entries(tags).map(([Key, Value]) => ({
-    Key,
-    Value
-  }));
-};
-
-// src/provider/aws/memorydb/cluster.ts
-var Cluster2 = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::MemoryDB::Cluster", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  // get status() {
-  // 	return this.output<string>(v => v.Status)
-  // }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get address() {
-    return this.output((v) => v.ClusterEndpoint.Address);
-  }
-  get port() {
-    return this.output((v) => v.ClusterEndpoint.Port);
-  }
-  toState() {
-    return {
-      document: {
-        ClusterName: this.props.name,
-        ClusterEndpoint: {
-          Port: this.props.port
-        },
-        Port: this.props.port,
-        Tags: formatTags(this.tags),
-        ...this.attr("Description", this.props.description),
-        ACLName: this.props.aclName,
-        EngineVersion: unwrap(this.props.engine, "7.0"),
-        ...this.attr("SubnetGroupName", this.props.subnetGroupName),
-        ...this.attr("SecurityGroupIds", this.props.securityGroupIds),
-        NodeType: "db." + unwrap(this.props.type),
-        NumReplicasPerShard: unwrap(this.props.replicasPerShard, 1),
-        NumShards: unwrap(this.props.shards, 1),
-        TLSEnabled: unwrap(this.props.tls, false),
-        DataTiering: unwrap(this.props.dataTiering) ? "true" : "false",
-        AutoMinorVersionUpgrade: unwrap(this.props.autoMinorVersionUpgrade, true),
-        MaintenanceWindow: unwrap(this.props.maintenanceWindow, "Sat:02:00-Sat:05:00")
-      }
-    };
-  }
-};
-
-// src/provider/aws/memorydb/subnet-group.ts
-var SubnetGroup = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::MemoryDB::SubnetGroup", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.ARN);
-  }
-  get name() {
-    return this.output((v) => v.SubnetGroupName);
-  }
-  toState() {
-    return {
-      document: {
-        SubnetGroupName: this.props.name,
-        SubnetIds: this.props.subnetIds,
-        ...this.attr("Description", this.props.description)
-      }
-    };
-  }
-};
-
-// src/provider/aws/open-search/index.ts
-var open_search_exports = {};
-__export(open_search_exports, {
-  Domain: () => Domain
-});
-
-// src/provider/aws/open-search/domain.ts
-import { gibibytes, toGibibytes } from "@awsless/size";
-import { capitalCase as capitalCase2 } from "change-case";
-var Domain = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::OpenSearchService::Domain", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get domainArn() {
-    return this.output((v) => v.DomainArn);
-  }
-  get domainEndpoint() {
-    return this.output((v) => v.DomainEndpoint);
-  }
-  setVpc(vpc) {
-    this.props.vpc = vpc;
-    this.registerDependency(vpc);
-    return this;
-  }
-  toState() {
-    const instance = unwrap(this.props.instance);
-    const vpc = unwrap(this.props.vpc);
-    const accessPolicy = unwrap(this.props.accessPolicy);
-    return {
-      document: {
-        DomainName: this.props.name,
-        Tags: formatTags(this.tags),
-        EngineVersion: unwrap(`OpenSearch_${this.props.version}`, "OpenSearch_2.13"),
-        IPAddressType: unwrap(this.props.ipType, "ipv4"),
-        ClusterConfig: {
-          InstanceType: `${instance.type}.search`,
-          InstanceCount: instance.count
-        },
-        EBSOptions: {
-          EBSEnabled: true,
-          VolumeSize: toGibibytes(unwrap(this.props.storageSize, gibibytes(10))),
-          VolumeType: "gp2"
-        },
-        DomainEndpointOptions: {
-          EnforceHTTPS: true
-        },
-        SoftwareUpdateOptions: {
-          AutoSoftwareUpdateEnabled: true
-        },
-        NodeToNodeEncryptionOptions: {
-          Enabled: unwrap(this.props.encryption, false)
-        },
-        EncryptionAtRestOptions: {
-          Enabled: unwrap(this.props.encryption, false)
-        },
-        ...vpc ? {
-          VPCOptions: {
-            SecurityGroupIds: vpc.securityGroupIds,
-            SubnetIds: vpc.subnetIds
-          }
-        } : {},
-        AccessPolicies: {
-          Version: unwrap(accessPolicy?.version, "2012-10-17"),
-          Statement: unwrap(accessPolicy?.statements, []).map((s) => unwrap(s)).map((statement) => ({
-            Effect: capitalCase2(unwrap(statement.effect, "allow")),
-            Action: unwrap(statement.actions, ["es:*"]),
-            Resource: unwrap(statement.resources, ["*"]),
-            ...statement.principal ? {
-              Principal: statement.principal
-            } : {},
-            ...statement.principalArn ? {
-              Condition: {
-                StringLike: {
-                  "AWS:PrincipalArn": statement.principalArn
-                }
-              }
-            } : {}
-          }))
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/open-search/serverless/index.ts
-var serverless_exports = {};
-__export(serverless_exports, {
-  Collection: () => Collection,
-  SecurityPolicy: () => SecurityPolicy
-});
-
-// src/provider/aws/open-search/serverless/collection.ts
-var Collection = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::OpenSearchServerless::Collection", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get endpoint() {
-    return this.output((v) => v.CollectionEndpoint);
-  }
-  get permissions() {
-    return {
-      actions: ["aoss:APIAccessAll"],
-      resources: [this.arn]
-    };
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        Type: unwrap(this.props.type).toUpperCase(),
-        ...this.attr("Description", this.props.description)
-      }
-    };
-  }
-};
-
-// src/provider/aws/open-search/serverless/security-policy.ts
-var SecurityPolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::OpenSearchServerless::SecurityPolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        Type: this.props.type,
-        Policy: this.props.policy,
-        ...this.attr("Description", this.props.description)
-      }
-    };
-  }
-};
-
-// src/provider/aws/route53/index.ts
-var route53_exports = {};
-__export(route53_exports, {
-  HostedZone: () => HostedZone,
-  RecordSet: () => RecordSet,
-  RecordSetProvider: () => RecordSetProvider,
-  formatRecordSet: () => formatRecordSet
-});
-
-// src/provider/aws/route53/record-set.ts
-import { minutes as minutes2, toSeconds as toSeconds12 } from "@awsless/duration";
-var formatRecordSet = (record) => {
-  const name = unwrap(record.name);
-  return {
-    Name: name.endsWith(".") ? name : name + ".",
-    Type: record.type,
-    Weight: unwrap(record.weight, 0),
-    // ...(record.ttl ? {} : {}),
-    ..."records" in record ? {
-      TTL: Number(toSeconds12(unwrap(record.ttl, minutes2(5)))),
-      ResourceRecords: record.records
-    } : {},
-    ..."alias" in record && unwrap(record.alias) ? {
-      AliasTarget: {
-        DNSName: unwrap(record.alias).dnsName,
-        HostedZoneId: unwrap(record.alias).hostedZoneId,
-        EvaluateTargetHealth: unwrap(record.alias).evaluateTargetHealth
-      }
-    } : {}
-    // ...unwrap(record.target).toJSON(),
-  };
-};
-var RecordSet = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Route53::RecordSet", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-route53-record-set";
-  toState() {
-    return {
-      document: {
-        HostedZoneId: unwrap(this.props).hostedZoneId,
-        ...formatRecordSet(unwrap(this.props))
-      }
-    };
-  }
-};
-
-// src/provider/aws/route53/hosted-zone.ts
-var HostedZone = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::Route53::HostedZone", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get id() {
-    return this.output((v) => v.Id);
-  }
-  get name() {
-    return this.output((v) => v.Name);
-  }
-  get nameServers() {
-    return this.output((v) => v.NameServers);
-  }
-  addRecord(id, record) {
-    const recordProps = combine([this.id, record]).apply(([_, record2]) => ({
-      hostedZoneId: this.id,
-      ...record2
-    }));
-    return new RecordSet(this, id, recordProps);
-  }
-  toState() {
-    const name = unwrap(this.props.name);
-    return {
-      document: {
-        Name: name.endsWith(".") ? name : name + ".",
-        HostedZoneTags: formatTags(this.tags)
-      }
-    };
-  }
-};
-
-// src/provider/aws/s3/index.ts
-var s3_exports = {};
-__export(s3_exports, {
-  Bucket: () => Bucket,
-  BucketObject: () => BucketObject,
-  BucketObjectProvider: () => BucketObjectProvider,
-  BucketPolicy: () => BucketPolicy,
-  BucketProvider: () => BucketProvider,
-  StateProvider: () => StateProvider
-});
-
-// src/provider/aws/s3/bucket-object.ts
-var BucketObject = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::S3::Bucket::Object", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-s3-bucket-object";
-  get bucket() {
-    return this.props.bucket;
-  }
-  get key() {
-    return this.props.key;
-  }
-  get version() {
-    return this.output((v) => v.VersionId);
-  }
-  get etag() {
-    return this.output((v) => v.ETag);
-  }
-  get checksum() {
-    return this.output((v) => v.Checksum);
-  }
-  // 			ACL:			acl
-  // 			Bucket: 		bucket
-  // 			Body:			body
-  // 			Key:			file.key
-  // 			Metadata:		metadata
-  // 			CacheControl:	cacheControl
-  // 			ContentType:	mime.contentType(file.ext) or 'text/html; charset=utf-8'
-  toState() {
-    return {
-      assets: {
-        body: this.props.body
-      },
-      document: {
-        Bucket: this.props.bucket,
-        Key: this.props.key,
-        CacheControl: this.props.cacheControl,
-        ContentType: this.props.contentType,
-        Metadata: this.props.metadata
-      }
-    };
-  }
-};
-
-// src/provider/aws/s3/bucket.ts
-var Bucket = class extends Resource {
-  constructor(parent, id, props = {}) {
-    super(parent, "AWS::S3::Bucket", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-s3-bucket";
-  get name() {
-    return this.output((v) => v.BucketName);
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get domainName() {
-    return this.output((v) => v.DomainName);
-  }
-  get dualStackDomainName() {
-    return this.output((v) => v.DualStackDomainName);
-  }
-  get regionalDomainName() {
-    return this.output((v) => v.RegionalDomainName);
-  }
-  get url() {
-    return this.output((v) => v.WebsiteURL);
-  }
-  get permissions() {
-    return {
-      actions: [
-        "s3:ListBucket",
-        "s3:ListBucketV2",
-        "s3:HeadObject",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:CopyObject",
-        "s3:GetObjectAttributes"
-      ],
-      resources: [
-        this.arn,
-        this.arn.apply((arn) => `${arn}/*`)
-        // `arn:aws:s3:::${this.name}`,
-        // `arn:aws:s3:::${this.name}/*`,
-      ]
-    };
-  }
-  addObject(id, props) {
-    return new BucketObject(this, id, {
-      ...props,
-      bucket: this.name
-    });
-  }
-  toState() {
-    return {
-      extra: {
-        forceDelete: this.props.forceDelete
-      },
-      document: {
-        BucketName: unwrap(this.props.name, this.identifier),
-        Tags: formatTags(this.tags),
-        // AccessControl: pascalCase(unwrap(this.props.accessControl, 'private')),
-        ...unwrap(this.props.versioning, false) ? {
-          VersioningConfiguration: {
-            Status: "Enabled"
-          }
-        } : {},
-        ...this.props.website ? {
-          WebsiteConfiguration: {
-            IndexDocument: unwrap(this.props.website).indexDocument,
-            ErrorDocument: unwrap(this.props.website).errorDocument
-          }
-        } : {},
-        ...this.props.lambdaConfigs ? {
-          NotificationConfiguration: {
-            LambdaConfigurations: unwrap(this.props.lambdaConfigs, []).map((config) => unwrap(config)).map((config) => ({
-              Event: config.event,
-              Function: unwrap(config.function)
-            }))
-          }
-        } : {},
-        ...this.props.cors ? {
-          CorsConfiguration: {
-            CorsRules: unwrap(this.props.cors, []).map((rule) => unwrap(rule)).map((rule) => ({
-              MaxAge: rule.maxAge,
-              AllowedHeaders: rule.headers,
-              AllowedMethods: rule.methods,
-              AllowedOrigins: rule.origins,
-              ExposedHeaders: rule.exposeHeaders
-            }))
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/aws/s3/bucket-policy.ts
-import { capitalCase as capitalCase3 } from "change-case";
-var BucketPolicy = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::S3::BucketPolicy", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  toState() {
-    return {
-      document: {
-        Bucket: this.props.bucketName,
-        PolicyDocument: {
-          Version: unwrap(this.props.version, "2012-10-17"),
-          Statement: unwrap(this.props.statements, []).map((s) => unwrap(s)).map((statement) => ({
-            Effect: capitalCase3(unwrap(statement.effect, "allow")),
-            ...statement.principal ? {
-              Principal: {
-                Service: statement.principal
-              }
-            } : {},
-            Action: statement.actions,
-            Resource: statement.resources,
-            ...statement.sourceArn ? {
-              Condition: {
-                StringEquals: {
-                  "AWS:SourceArn": statement.sourceArn
-                }
-              }
-            } : {}
-          }))
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/s3/state-provider.ts
-import {
-  DeleteObjectCommand as DeleteObjectCommand2,
-  GetObjectCommand,
-  PutObjectCommand as PutObjectCommand2,
-  S3Client as S3Client3,
-  S3ServiceException as S3ServiceException3
-} from "@aws-sdk/client-s3";
-var StateProvider = class {
-  constructor(props) {
-    this.props = props;
-    this.client = new S3Client3(props);
-  }
-  client;
+// src/formation/backend/memory/state.ts
+var MemoryStateBackend = class {
+  states = /* @__PURE__ */ new Map();
   async get(urn) {
-    let result;
-    try {
-      result = await this.client.send(
-        new GetObjectCommand({
-          Bucket: this.props.bucket,
-          Key: `${urn}.state`
-        })
-      );
-    } catch (error) {
-      if (error instanceof S3ServiceException3 && error.name === "NoSuchKey") {
-        return;
-      }
-      throw error;
-    }
-    if (!result.Body) {
-      return;
-    }
-    const body = await result.Body.transformToString("utf8");
-    const state = JSON.parse(body);
-    return state;
+    return this.states.get(urn);
   }
   async update(urn, state) {
-    await this.client.send(
-      new PutObjectCommand2({
-        Bucket: this.props.bucket,
-        Key: `${urn}.state`,
-        Body: JSON.stringify(state)
-      })
-    );
+    this.states.set(urn, state);
   }
   async delete(urn) {
-    await this.client.send(
-      new DeleteObjectCommand2({
-        Bucket: this.props.bucket,
-        Key: `${urn}.state`
-      })
-    );
+    this.states.delete(urn);
+  }
+  clear() {
+    this.states.clear();
   }
 };
 
-// src/provider/aws/ses/index.ts
-var ses_exports = {};
-__export(ses_exports, {
-  ConfigurationSet: () => ConfigurationSet,
-  EmailIdentity: () => EmailIdentity
-});
-
-// src/provider/aws/ses/email-identity.ts
-import { constantCase as constantCase12 } from "change-case";
-import { minutes as minutes3 } from "@awsless/duration";
-var EmailIdentity = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::SES::EmailIdentity", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  // get arn() {
-  // 	return this.output(() => `arn:aws:ses:eu-west-1:468004125411:identity/${this.props.emailIdentity}`)
-  // }
-  getDnsToken(index) {
-    return this.output((v) => ({
-      name: v[`DkimDNSTokenName${index}`],
-      value: v[`DkimDNSTokenValue${index}`]
-    }));
-  }
-  // get fullDomain() {
-  // 	return `${this.props.subDomain}.${this.props.domain}`
-  // }
-  // get verifiedForSendingStatus() {
-  // 	return
-  // }
-  get dkimDnsTokens() {
-    return [
-      //
-      this.getDnsToken(1),
-      this.getDnsToken(2),
-      this.getDnsToken(3)
-    ];
-  }
-  get dkimRecords() {
-    const ttl = minutes3(5);
-    return this.dkimDnsTokens.map((token) => ({
-      name: token.apply((token2) => token2.name),
-      type: "CNAME",
-      ttl,
-      records: [token.apply((token2) => token2.value)]
-    }));
-  }
-  toState() {
-    return {
-      document: {
-        EmailIdentity: this.props.emailIdentity,
-        ...this.props.configurationSetName ? {
-          ConfigurationSetAttributes: {
-            ConfigurationSetName: this.props.configurationSetName
-          }
-        } : {},
-        ...this.props.dkim ? {
-          DkimAttributes: {
-            SigningEnabled: true
-          },
-          DkimSigningAttributes: {
-            NextSigningKeyLength: constantCase12(unwrap(this.props.dkim))
-          }
-        } : {},
-        FeedbackAttributes: {
-          EmailForwardingEnabled: unwrap(this.props.feedback, false)
-        },
-        MailFromAttributes: {
-          MailFromDomain: this.props.mailFromDomain,
-          BehaviorOnMxFailure: unwrap(this.props.rejectOnMxFailure, true) ? "REJECT_MESSAGE" : "USE_DEFAULT_VALUE"
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/ses/configuration-set.ts
-var ConfigurationSet = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::SES::ConfigurationSet", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get name() {
-    return this.output((v) => v.Name);
-  }
-  toState() {
-    return {
-      document: {
-        Name: this.props.name,
-        VdmOptions: {
-          DashboardOptions: {
-            EngagementMetrics: unwrap(this.props.engagementMetrics, false) ? "ENABLED" : "DISABLED"
-          }
-        },
-        ReputationOptions: {
-          ReputationMetricsEnabled: unwrap(this.props.reputationMetrics, false)
-        },
-        SendingOptions: {
-          SendingEnabled: unwrap(this.props.sending, true)
-        }
-      }
-    };
-  }
-};
-
-// src/provider/aws/sns/index.ts
-var sns_exports = {};
-__export(sns_exports, {
-  Subscription: () => Subscription,
-  SubscriptionProvider: () => SubscriptionProvider,
-  Topic: () => Topic
-});
-
-// src/provider/aws/sns/subscription.ts
-var Subscription = class extends Resource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::SNS::Subscription", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  cloudProviderId = "aws-sns-subscription";
-  toState() {
-    return {
-      document: {
-        TopicArn: this.props.topicArn,
-        Protocol: this.props.protocol,
-        Endpoint: this.props.endpoint
-      }
-    };
-  }
-};
-
-// src/provider/aws/sns/topic.ts
-var Topic = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::SNS::Topic", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  get arn() {
-    return this.output((v) => v.TopicArn);
-  }
-  get name() {
-    return this.output((v) => v.TopicName);
-  }
-  get permissions() {
-    return {
-      actions: ["sns:Publish"],
-      resources: [this.arn]
-    };
-  }
-  toState() {
-    return {
-      document: {
-        TopicName: this.props.name,
-        DisplayName: this.props.name,
-        Tags: formatTags(this.tags)
-      }
-    };
-  }
-};
-
-// src/provider/aws/sqs/index.ts
-var sqs_exports = {};
-__export(sqs_exports, {
-  Queue: () => Queue
-});
-
-// src/provider/aws/sqs/queue.ts
-import { days as days4, seconds as seconds2, toSeconds as toSeconds13 } from "@awsless/duration";
-import { kibibytes, toBytes } from "@awsless/size";
-var Queue = class extends CloudControlApiResource {
-  constructor(parent, id, props) {
-    super(parent, "AWS::SQS::Queue", id, props);
-    this.parent = parent;
-    this.props = props;
-  }
-  setDeadLetter(arn) {
-    this.props.deadLetterArn = arn;
-    return this;
-  }
-  get arn() {
-    return this.output((v) => v.Arn);
-  }
-  get url() {
-    return this.output((v) => v.QueueUrl);
-  }
-  get name() {
-    return this.output((v) => v.QueueName);
-  }
-  get permissions() {
-    return {
-      actions: [
-        //
-        "sqs:SendMessage",
-        "sqs:ReceiveMessage",
-        "sqs:GetQueueUrl",
-        "sqs:GetQueueAttributes"
-      ],
-      resources: [this.arn]
-    };
-  }
-  toState() {
-    return {
-      document: {
-        QueueName: this.props.name,
-        Tags: formatTags(this.tags),
-        // Tags: [{ Key: 'name', Value: this.props.name }],
-        DelaySeconds: toSeconds13(unwrap(this.props.deliveryDelay, seconds2(0))),
-        MaximumMessageSize: toBytes(unwrap(this.props.maxMessageSize, kibibytes(256))),
-        MessageRetentionPeriod: toSeconds13(unwrap(this.props.retentionPeriod, days4(4))),
-        ReceiveMessageWaitTimeSeconds: toSeconds13(unwrap(this.props.receiveMessageWaitTime, seconds2(0))),
-        VisibilityTimeout: toSeconds13(unwrap(this.props.visibilityTimeout, seconds2(30))),
-        ...this.props.deadLetterArn ? {
-          RedrivePolicy: {
-            deadLetterTargetArn: this.props.deadLetterArn,
-            maxReceiveCount: unwrap(this.props.maxReceiveCount, 100)
-          }
-        } : {}
-      }
-    };
-  }
-};
-
-// src/provider/local/index.ts
-var local_exports = {};
-__export(local_exports, {
-  file: () => file_exports,
-  memory: () => memory_exports
-});
-
-// src/provider/local/file/index.ts
-var file_exports = {};
-__export(file_exports, {
-  LockProvider: () => LockProvider2,
-  StateProvider: () => StateProvider2
-});
-
-// src/provider/local/file/lock-provider.ts
-import { mkdir, rm, stat } from "fs/promises";
-import { join } from "path";
-import { lock } from "proper-lockfile";
-var LockProvider2 = class {
-  constructor(props) {
-    this.props = props;
-  }
-  lockFile(urn) {
-    return join(this.props.dir, `${urn}.lock`);
-  }
-  async mkdir() {
-    await mkdir(this.props.dir, {
-      recursive: true
-    });
-  }
-  async insecureReleaseLock(urn) {
-    if (await this.locked(urn)) {
-      await rm(this.lockFile(urn));
-    }
-  }
-  async locked(urn) {
-    const result = await stat(this.lockFile(urn));
-    return result.isFile();
-  }
-  async lock(urn) {
-    await this.mkdir();
-    return lock(this.lockFile(urn), {
-      realpath: false
-    });
-  }
-};
-
-// src/provider/local/file/state-provider.ts
-import { join as join2 } from "path";
-import { mkdir as mkdir2, readFile as readFile2, rm as rm2, writeFile } from "fs/promises";
-var StateProvider2 = class {
-  constructor(props) {
-    this.props = props;
-  }
-  stateFile(urn) {
-    return join2(this.props.dir, `${urn}.json`);
-  }
-  async mkdir() {
-    await mkdir2(this.props.dir, {
-      recursive: true
-    });
-  }
-  async get(urn) {
-    let json;
-    try {
-      json = await readFile2(join2(this.stateFile(urn)), "utf8");
-    } catch (error) {
-      return;
-    }
-    return JSON.parse(json);
-  }
-  async update(urn, state) {
-    await this.mkdir();
-    await writeFile(this.stateFile(urn), JSON.stringify(state, void 0, 2));
-  }
-  async delete(urn) {
-    await this.mkdir();
-    await rm2(this.stateFile(urn));
-  }
-};
-
-// src/provider/local/memory/index.ts
-var memory_exports = {};
-__export(memory_exports, {
-  LockProvider: () => LockProvider3,
-  StateProvider: () => StateProvider3
-});
-
-// src/provider/local/memory/lock-provider.ts
-var LockProvider3 = class {
+// src/formation/backend/memory/lock.ts
+var MemoryLockBackend = class {
   locks = /* @__PURE__ */ new Map();
   async insecureReleaseLock(urn) {
     this.locks.delete(urn);
@@ -6774,41 +1109,2272 @@ var LockProvider3 = class {
       }
     };
   }
+  clear() {
+    this.locks.clear();
+  }
 };
 
-// src/provider/local/memory/state-provider.ts
-var StateProvider3 = class {
-  states = /* @__PURE__ */ new Map();
+// src/formation/backend/file/state.ts
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { join } from "path";
+var debug8 = createDebugger("State");
+var FileStateBackend = class {
+  constructor(props) {
+    this.props = props;
+  }
+  stateFile(urn) {
+    return join(this.props.dir, `${urn}.json`);
+  }
+  async mkdir() {
+    await mkdir(this.props.dir, {
+      recursive: true
+    });
+  }
   async get(urn) {
-    return this.states.get(urn);
+    debug8("get");
+    let json;
+    try {
+      json = await readFile(join(this.stateFile(urn)), "utf8");
+    } catch (error) {
+      return;
+    }
+    return JSON.parse(json);
   }
   async update(urn, state) {
-    this.states.set(urn, state);
+    debug8("update");
+    await this.mkdir();
+    await writeFile(this.stateFile(urn), JSON.stringify(state, void 0, 2));
   }
   async delete(urn) {
-    this.states.delete(urn);
+    debug8("delete");
+    await this.mkdir();
+    await rm(this.stateFile(urn));
   }
 };
+
+// src/formation/backend/file/lock.ts
+import { mkdir as mkdir2, rm as rm2, stat } from "fs/promises";
+import { join as join2 } from "path";
+import { lock } from "proper-lockfile";
+var FileLockBackend = class {
+  constructor(props) {
+    this.props = props;
+  }
+  lockFile(urn) {
+    return join2(this.props.dir, `${urn}.lock`);
+  }
+  async mkdir() {
+    await mkdir2(this.props.dir, {
+      recursive: true
+    });
+  }
+  async insecureReleaseLock(urn) {
+    if (await this.locked(urn)) {
+      await rm2(this.lockFile(urn));
+    }
+  }
+  async locked(urn) {
+    const result = await stat(this.lockFile(urn));
+    return result.isFile();
+  }
+  async lock(urn) {
+    await this.mkdir();
+    return lock(this.lockFile(urn), {
+      realpath: false
+    });
+  }
+};
+
+// src/formation/backend/aws/s3-state.ts
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+  S3ServiceException
+} from "@aws-sdk/client-s3";
+var S3StateBackend = class {
+  constructor(props) {
+    this.props = props;
+    this.client = new S3Client(props);
+  }
+  client;
+  async get(urn) {
+    let result;
+    try {
+      result = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.props.bucket,
+          Key: `${urn}.state`
+        })
+      );
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.name === "NoSuchKey") {
+        return;
+      }
+      throw error;
+    }
+    if (!result.Body) {
+      return;
+    }
+    const body = await result.Body.transformToString("utf8");
+    const state = JSON.parse(body);
+    return state;
+  }
+  async update(urn, state) {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.props.bucket,
+        Key: `${urn}.state`,
+        Body: JSON.stringify(state)
+      })
+    );
+  }
+  async delete(urn) {
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.props.bucket,
+        Key: `${urn}.state`
+      })
+    );
+  }
+};
+
+// src/formation/backend/aws/dynamodb-lock.ts
+import { DynamoDB } from "@aws-sdk/client-dynamodb";
+import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+var DynamoLockBackend = class {
+  constructor(props) {
+    this.props = props;
+    this.client = new DynamoDB(props);
+  }
+  client;
+  async insecureReleaseLock(urn) {
+    await this.client.updateItem({
+      TableName: this.props.tableName,
+      Key: marshall({ urn }),
+      ExpressionAttributeNames: { "#lock": "lock" },
+      UpdateExpression: "REMOVE #lock"
+    });
+  }
+  async locked(urn) {
+    const result = await this.client.getItem({
+      TableName: this.props.tableName,
+      Key: marshall({ urn })
+    });
+    if (!result.Item) {
+      return false;
+    }
+    const item = unmarshall(result.Item);
+    return typeof item.lock === "number";
+  }
+  async lock(urn) {
+    const id = Math.floor(Math.random() * 1e5);
+    const props = {
+      TableName: this.props.tableName,
+      Key: marshall({ urn }),
+      ExpressionAttributeNames: { "#lock": "lock" },
+      ExpressionAttributeValues: { ":id": marshall(id) }
+    };
+    await this.client.updateItem({
+      ...props,
+      UpdateExpression: "SET #lock = :id",
+      ConditionExpression: "attribute_not_exists(#lock)"
+    });
+    return async () => {
+      await this.client.updateItem({
+        ...props,
+        UpdateExpression: "REMOVE #lock",
+        ConditionExpression: "#lock = :id"
+      });
+    };
+  }
+};
+
+// src/formation/helpers.ts
+import { createHash } from "crypto";
+import { readFile as readFile2 } from "fs/promises";
+var file = (path, encoding = "utf8") => {
+  return new Future(async (resolve2, reject) => {
+    try {
+      const file2 = await readFile2(path, {
+        encoding
+      });
+      resolve2(file2);
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+var hash = (path, algo = "sha256") => {
+  return file(path).pipe((file2) => createHash(algo).update(file2).digest("hex"));
+};
+
+// src/formation/globals.ts
+globalThis.$resolve = resolve;
+globalThis.$combine = combine;
+globalThis.$interpolate = interpolate;
+globalThis.$hash = hash;
+globalThis.$file = file;
+
+// src/terraform/plugin/client.ts
+import { credentials, loadPackageDefinition } from "@grpc/grpc-js";
+import { fromJSON } from "@grpc/proto-loader";
+
+// src/terraform/plugin/diagnostic.ts
+var DiagnosticsError = class extends Error {
+  diagnostics;
+  constructor(diagnostics) {
+    super(diagnostics[0]?.summary ?? "Diagnostic error");
+    this.diagnostics = diagnostics;
+  }
+};
+var throwDiagnosticError = (response) => {
+  const diagnostics = response.diagnostics.map((item) => ({
+    severity: item.severity === 1 ? "error" : "warning",
+    summary: item.summary,
+    detail: item.detail,
+    path: item.attribute?.steps.map((step) => step.attributeName)
+  }));
+  return new DiagnosticsError(diagnostics);
+};
+
+// src/terraform/plugin/protocol/tfplugin5.ts
+var tfplugin5_default = {
+  options: { syntax: "proto3" },
+  nested: {
+    tfplugin5: {
+      nested: {
+        DynamicValue: { fields: { msgpack: { type: "bytes", id: 1 }, json: { type: "bytes", id: 2 } } },
+        Diagnostic: {
+          fields: {
+            severity: { type: "Severity", id: 1 },
+            summary: { type: "string", id: 2 },
+            detail: { type: "string", id: 3 },
+            attribute: { type: "AttributePath", id: 4 }
+          },
+          nested: { Severity: { values: { INVALID: 0, ERROR: 1, WARNING: 2 } } }
+        },
+        AttributePath: {
+          fields: { steps: { rule: "repeated", type: "Step", id: 1 } },
+          nested: {
+            Step: {
+              oneofs: { selector: { oneof: ["attributeName", "elementKeyString", "elementKeyInt"] } },
+              fields: {
+                attributeName: { type: "string", id: 1 },
+                elementKeyString: { type: "string", id: 2 },
+                elementKeyInt: { type: "int64", id: 3 }
+              }
+            }
+          }
+        },
+        Stop: {
+          fields: {},
+          nested: { Request: { fields: {} }, Response: { fields: { Error: { type: "string", id: 1 } } } }
+        },
+        RawState: {
+          fields: { json: { type: "bytes", id: 1 }, flatmap: { keyType: "string", type: "string", id: 2 } }
+        },
+        Schema: {
+          fields: { version: { type: "int64", id: 1 }, block: { type: "Block", id: 2 } },
+          nested: {
+            Block: {
+              fields: {
+                version: { type: "int64", id: 1 },
+                attributes: { rule: "repeated", type: "Attribute", id: 2 },
+                blockTypes: { rule: "repeated", type: "NestedBlock", id: 3 }
+              }
+            },
+            Attribute: {
+              fields: {
+                name: { type: "string", id: 1 },
+                type: { type: "bytes", id: 2 },
+                description: { type: "string", id: 3 },
+                required: { type: "bool", id: 4 },
+                optional: { type: "bool", id: 5 },
+                computed: { type: "bool", id: 6 },
+                sensitive: { type: "bool", id: 7 }
+              }
+            },
+            NestedBlock: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                block: { type: "Block", id: 2 },
+                nesting: { type: "NestingMode", id: 3 },
+                minItems: { type: "int64", id: 4 },
+                maxItems: { type: "int64", id: 5 }
+              },
+              nested: {
+                NestingMode: { values: { INVALID: 0, SINGLE: 1, LIST: 2, SET: 3, MAP: 4, GROUP: 5 } }
+              }
+            }
+          }
+        },
+        Provider: {
+          methods: {
+            GetSchema: {
+              requestType: "GetProviderSchema.Request",
+              responseType: "GetProviderSchema.Response"
+            },
+            PrepareProviderConfig: {
+              requestType: "PrepareProviderConfig.Request",
+              responseType: "PrepareProviderConfig.Response"
+            },
+            ValidateResourceTypeConfig: {
+              requestType: "ValidateResourceTypeConfig.Request",
+              responseType: "ValidateResourceTypeConfig.Response"
+            },
+            ValidateDataSourceConfig: {
+              requestType: "ValidateDataSourceConfig.Request",
+              responseType: "ValidateDataSourceConfig.Response"
+            },
+            UpgradeResourceState: {
+              requestType: "UpgradeResourceState.Request",
+              responseType: "UpgradeResourceState.Response"
+            },
+            Configure: { requestType: "Configure.Request", responseType: "Configure.Response" },
+            ReadResource: { requestType: "ReadResource.Request", responseType: "ReadResource.Response" },
+            PlanResourceChange: {
+              requestType: "PlanResourceChange.Request",
+              responseType: "PlanResourceChange.Response"
+            },
+            ApplyResourceChange: {
+              requestType: "ApplyResourceChange.Request",
+              responseType: "ApplyResourceChange.Response"
+            },
+            ImportResourceState: {
+              requestType: "ImportResourceState.Request",
+              responseType: "ImportResourceState.Response"
+            },
+            ReadDataSource: {
+              requestType: "ReadDataSource.Request",
+              responseType: "ReadDataSource.Response"
+            },
+            Stop: { requestType: "Stop.Request", responseType: "Stop.Response" }
+          }
+        },
+        GetProviderSchema: {
+          fields: {},
+          nested: {
+            Request: { fields: {} },
+            Response: {
+              fields: {
+                provider: { type: "Schema", id: 1 },
+                resourceSchemas: { keyType: "string", type: "Schema", id: 2 },
+                dataSourceSchemas: { keyType: "string", type: "Schema", id: 3 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 4 }
+              }
+            }
+          }
+        },
+        PrepareProviderConfig: {
+          fields: {},
+          nested: {
+            Request: { fields: { config: { type: "DynamicValue", id: 1 } } },
+            Response: {
+              fields: {
+                preparedConfig: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        UpgradeResourceState: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                version: { type: "int64", id: 2 },
+                rawState: { type: "RawState", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                upgradedState: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        ValidateResourceTypeConfig: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: { typeName: { type: "string", id: 1 }, config: { type: "DynamicValue", id: 2 } }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ValidateDataSourceConfig: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: { typeName: { type: "string", id: 1 }, config: { type: "DynamicValue", id: 2 } }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        Configure: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                terraformVersion: { type: "string", id: 1 },
+                config: { type: "DynamicValue", id: 2 }
+              }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ReadResource: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                currentState: { type: "DynamicValue", id: 2 },
+                private: { type: "bytes", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                newState: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 },
+                private: { type: "bytes", id: 3 }
+              }
+            }
+          }
+        },
+        PlanResourceChange: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                priorState: { type: "DynamicValue", id: 2 },
+                proposedNewState: { type: "DynamicValue", id: 3 },
+                config: { type: "DynamicValue", id: 4 },
+                priorPrivate: { type: "bytes", id: 5 }
+              }
+            },
+            Response: {
+              fields: {
+                plannedState: { type: "DynamicValue", id: 1 },
+                requiresReplace: { rule: "repeated", type: "AttributePath", id: 2 },
+                plannedPrivate: { type: "bytes", id: 3 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 4 },
+                legacyTypeSystem: { type: "bool", id: 5 }
+              }
+            }
+          }
+        },
+        ApplyResourceChange: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                priorState: { type: "DynamicValue", id: 2 },
+                plannedState: { type: "DynamicValue", id: 3 },
+                config: { type: "DynamicValue", id: 4 },
+                plannedPrivate: { type: "bytes", id: 5 }
+              }
+            },
+            Response: {
+              fields: {
+                newState: { type: "DynamicValue", id: 1 },
+                private: { type: "bytes", id: 2 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 3 },
+                legacyTypeSystem: { type: "bool", id: 4 }
+              }
+            }
+          }
+        },
+        ImportResourceState: {
+          fields: {},
+          nested: {
+            Request: { fields: { typeName: { type: "string", id: 1 }, id: { type: "string", id: 2 } } },
+            ImportedResource: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                state: { type: "DynamicValue", id: 2 },
+                private: { type: "bytes", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                importedResources: { rule: "repeated", type: "ImportedResource", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        ReadDataSource: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: { typeName: { type: "string", id: 1 }, config: { type: "DynamicValue", id: 2 } }
+            },
+            Response: {
+              fields: {
+                state: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        Provisioner: {
+          methods: {
+            GetSchema: {
+              requestType: "GetProvisionerSchema.Request",
+              responseType: "GetProvisionerSchema.Response"
+            },
+            ValidateProvisionerConfig: {
+              requestType: "ValidateProvisionerConfig.Request",
+              responseType: "ValidateProvisionerConfig.Response"
+            },
+            ProvisionResource: {
+              requestType: "ProvisionResource.Request",
+              responseType: "ProvisionResource.Response",
+              responseStream: true
+            },
+            Stop: { requestType: "Stop.Request", responseType: "Stop.Response" }
+          }
+        },
+        GetProvisionerSchema: {
+          fields: {},
+          nested: {
+            Request: { fields: {} },
+            Response: {
+              fields: {
+                provisioner: { type: "Schema", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        ValidateProvisionerConfig: {
+          fields: {},
+          nested: {
+            Request: { fields: { config: { type: "DynamicValue", id: 1 } } },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ProvisionResource: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                config: { type: "DynamicValue", id: 1 },
+                connection: { type: "DynamicValue", id: 2 }
+              }
+            },
+            Response: {
+              fields: {
+                output: { type: "string", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+// src/terraform/plugin/protocol/tfplugin6.ts
+var tfplugin6_default = {
+  options: { syntax: "proto3", go_package: "github.com/hashicorp/terraform/internal/tfplugin6" },
+  nested: {
+    tfplugin6: {
+      nested: {
+        DynamicValue: { fields: { msgpack: { type: "bytes", id: 1 }, json: { type: "bytes", id: 2 } } },
+        Diagnostic: {
+          fields: {
+            severity: { type: "Severity", id: 1 },
+            summary: { type: "string", id: 2 },
+            detail: { type: "string", id: 3 },
+            attribute: { type: "AttributePath", id: 4 }
+          },
+          nested: { Severity: { values: { INVALID: 0, ERROR: 1, WARNING: 2 } } }
+        },
+        AttributePath: {
+          fields: { steps: { rule: "repeated", type: "Step", id: 1 } },
+          nested: {
+            Step: {
+              oneofs: { selector: { oneof: ["attributeName", "elementKeyString", "elementKeyInt"] } },
+              fields: {
+                attributeName: { type: "string", id: 1 },
+                elementKeyString: { type: "string", id: 2 },
+                elementKeyInt: { type: "int64", id: 3 }
+              }
+            }
+          }
+        },
+        StopProvider: {
+          fields: {},
+          nested: { Request: { fields: {} }, Response: { fields: { Error: { type: "string", id: 1 } } } }
+        },
+        RawState: {
+          fields: { json: { type: "bytes", id: 1 }, flatmap: { keyType: "string", type: "string", id: 2 } }
+        },
+        StringKind: { values: { PLAIN: 0, MARKDOWN: 1 } },
+        Schema: {
+          fields: { version: { type: "int64", id: 1 }, block: { type: "Block", id: 2 } },
+          nested: {
+            Block: {
+              fields: {
+                version: { type: "int64", id: 1 },
+                attributes: { rule: "repeated", type: "Attribute", id: 2 },
+                blockTypes: { rule: "repeated", type: "NestedBlock", id: 3 },
+                description: { type: "string", id: 4 },
+                descriptionKind: { type: "StringKind", id: 5 },
+                deprecated: { type: "bool", id: 6 }
+              }
+            },
+            Attribute: {
+              fields: {
+                name: { type: "string", id: 1 },
+                type: { type: "bytes", id: 2 },
+                nestedType: { type: "Object", id: 10 },
+                description: { type: "string", id: 3 },
+                required: { type: "bool", id: 4 },
+                optional: { type: "bool", id: 5 },
+                computed: { type: "bool", id: 6 },
+                sensitive: { type: "bool", id: 7 },
+                descriptionKind: { type: "StringKind", id: 8 },
+                deprecated: { type: "bool", id: 9 }
+              }
+            },
+            NestedBlock: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                block: { type: "Block", id: 2 },
+                nesting: { type: "NestingMode", id: 3 },
+                minItems: { type: "int64", id: 4 },
+                maxItems: { type: "int64", id: 5 }
+              },
+              nested: {
+                NestingMode: { values: { INVALID: 0, SINGLE: 1, LIST: 2, SET: 3, MAP: 4, GROUP: 5 } }
+              }
+            },
+            Object: {
+              fields: {
+                attributes: { rule: "repeated", type: "Attribute", id: 1 },
+                nesting: { type: "NestingMode", id: 3 },
+                minItems: { type: "int64", id: 4 },
+                maxItems: { type: "int64", id: 5 }
+              },
+              nested: { NestingMode: { values: { INVALID: 0, SINGLE: 1, LIST: 2, SET: 3, MAP: 4 } } }
+            }
+          }
+        },
+        Provider: {
+          methods: {
+            GetProviderSchema: {
+              requestType: "GetProviderSchema.Request",
+              responseType: "GetProviderSchema.Response"
+            },
+            ValidateProviderConfig: {
+              requestType: "ValidateProviderConfig.Request",
+              responseType: "ValidateProviderConfig.Response"
+            },
+            ValidateResourceConfig: {
+              requestType: "ValidateResourceConfig.Request",
+              responseType: "ValidateResourceConfig.Response"
+            },
+            ValidateDataResourceConfig: {
+              requestType: "ValidateDataResourceConfig.Request",
+              responseType: "ValidateDataResourceConfig.Response"
+            },
+            UpgradeResourceState: {
+              requestType: "UpgradeResourceState.Request",
+              responseType: "UpgradeResourceState.Response"
+            },
+            ConfigureProvider: {
+              requestType: "ConfigureProvider.Request",
+              responseType: "ConfigureProvider.Response"
+            },
+            ReadResource: { requestType: "ReadResource.Request", responseType: "ReadResource.Response" },
+            PlanResourceChange: {
+              requestType: "PlanResourceChange.Request",
+              responseType: "PlanResourceChange.Response"
+            },
+            ApplyResourceChange: {
+              requestType: "ApplyResourceChange.Request",
+              responseType: "ApplyResourceChange.Response"
+            },
+            ImportResourceState: {
+              requestType: "ImportResourceState.Request",
+              responseType: "ImportResourceState.Response"
+            },
+            ReadDataSource: {
+              requestType: "ReadDataSource.Request",
+              responseType: "ReadDataSource.Response"
+            },
+            StopProvider: { requestType: "StopProvider.Request", responseType: "StopProvider.Response" }
+          }
+        },
+        GetProviderSchema: {
+          fields: {},
+          nested: {
+            Request: { fields: {} },
+            Response: {
+              fields: {
+                provider: { type: "Schema", id: 1 },
+                resourceSchemas: { keyType: "string", type: "Schema", id: 2 },
+                dataSourceSchemas: { keyType: "string", type: "Schema", id: 3 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 4 },
+                providerMeta: { type: "Schema", id: 5 }
+              }
+            }
+          }
+        },
+        ValidateProviderConfig: {
+          fields: {},
+          nested: {
+            Request: { fields: { config: { type: "DynamicValue", id: 1 } } },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 } } }
+          }
+        },
+        UpgradeResourceState: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                version: { type: "int64", id: 2 },
+                rawState: { type: "RawState", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                upgradedState: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        ValidateResourceConfig: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: { typeName: { type: "string", id: 1 }, config: { type: "DynamicValue", id: 2 } }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ValidateDataResourceConfig: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: { typeName: { type: "string", id: 1 }, config: { type: "DynamicValue", id: 2 } }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ConfigureProvider: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                terraformVersion: { type: "string", id: 1 },
+                config: { type: "DynamicValue", id: 2 }
+              }
+            },
+            Response: { fields: { diagnostics: { rule: "repeated", type: "Diagnostic", id: 1 } } }
+          }
+        },
+        ReadResource: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                currentState: { type: "DynamicValue", id: 2 },
+                private: { type: "bytes", id: 3 },
+                providerMeta: { type: "DynamicValue", id: 4 }
+              }
+            },
+            Response: {
+              fields: {
+                newState: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 },
+                private: { type: "bytes", id: 3 }
+              }
+            }
+          }
+        },
+        PlanResourceChange: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                priorState: { type: "DynamicValue", id: 2 },
+                proposedNewState: { type: "DynamicValue", id: 3 },
+                config: { type: "DynamicValue", id: 4 },
+                priorPrivate: { type: "bytes", id: 5 },
+                providerMeta: { type: "DynamicValue", id: 6 }
+              }
+            },
+            Response: {
+              fields: {
+                plannedState: { type: "DynamicValue", id: 1 },
+                requiresReplace: { rule: "repeated", type: "AttributePath", id: 2 },
+                plannedPrivate: { type: "bytes", id: 3 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 4 }
+              }
+            }
+          }
+        },
+        ApplyResourceChange: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                priorState: { type: "DynamicValue", id: 2 },
+                plannedState: { type: "DynamicValue", id: 3 },
+                config: { type: "DynamicValue", id: 4 },
+                plannedPrivate: { type: "bytes", id: 5 },
+                providerMeta: { type: "DynamicValue", id: 6 }
+              }
+            },
+            Response: {
+              fields: {
+                newState: { type: "DynamicValue", id: 1 },
+                private: { type: "bytes", id: 2 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 3 }
+              }
+            }
+          }
+        },
+        ImportResourceState: {
+          fields: {},
+          nested: {
+            Request: { fields: { typeName: { type: "string", id: 1 }, id: { type: "string", id: 2 } } },
+            ImportedResource: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                state: { type: "DynamicValue", id: 2 },
+                private: { type: "bytes", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                importedResources: { rule: "repeated", type: "ImportedResource", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        },
+        ReadDataSource: {
+          fields: {},
+          nested: {
+            Request: {
+              fields: {
+                typeName: { type: "string", id: 1 },
+                config: { type: "DynamicValue", id: 2 },
+                providerMeta: { type: "DynamicValue", id: 3 }
+              }
+            },
+            Response: {
+              fields: {
+                state: { type: "DynamicValue", id: 1 },
+                diagnostics: { rule: "repeated", type: "Diagnostic", id: 2 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+// src/terraform/plugin/client.ts
+var debug9 = createDebugger("Client");
+var protocols = {
+  tfplugin5: tfplugin5_default,
+  tfplugin6: tfplugin6_default
+};
+var createPluginClient = async (props) => {
+  const proto = protocols[props.protocol.split(".").at(0) ?? ""];
+  if (!proto) {
+    throw new Error(`We don't have support for the ${props.protocol} protocol`);
+  }
+  const pack2 = fromJSON(proto);
+  const grpc = loadPackageDefinition(pack2);
+  const client = new grpc["tfplugin" + props.version].Provider(
+    `unix://${props.endpoint}`,
+    credentials.createInsecure(),
+    {
+      "grpc.max_receive_message_length": 100 * 1024 * 1024,
+      "grpc.max_send_message_length": 100 * 1024 * 1024
+    }
+  );
+  debug9("init", props.protocol);
+  await new Promise((resolve2, reject) => {
+    const deadline = /* @__PURE__ */ new Date();
+    deadline.setSeconds(deadline.getSeconds() + 10);
+    client.waitForReady(deadline, (error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve2();
+      }
+    });
+  });
+  debug9("connected");
+  return {
+    call(method, payload) {
+      return new Promise((resolve2, reject) => {
+        const fn = client[method];
+        debug9("call", method);
+        if (!fn) {
+          reject(new Error(`Unknown method call: ${method}`));
+          return;
+        }
+        fn.call(client, payload, (error, response) => {
+          if (error) {
+            debug9("failed", error);
+            reject(error);
+          } else if (response.diagnostics) {
+            debug9("failed", response.diagnostics);
+            reject(throwDiagnosticError(response));
+          } else {
+            resolve2(response);
+          }
+        });
+      });
+    }
+  };
+};
+
+// src/terraform/plugin/download.ts
+import jszip from "jszip";
+import { mkdir as mkdir3, stat as stat2, writeFile as writeFile2 } from "fs/promises";
+import { join as join3 } from "path";
+
+// src/terraform/plugin/registry.ts
+import { arch, platform } from "os";
+import { compare } from "semver";
+var baseUrl = "https://registry.terraform.io/v1/providers";
+var getProviderVersions = async (org, type) => {
+  const resp = await fetch(`${baseUrl}/${org}/${type}/versions`);
+  const data = await resp.json();
+  const versions2 = data.versions;
+  const os = getOS();
+  const ar = getArch();
+  const supported = versions2.filter((v) => {
+    return !!v.platforms.find((p) => p.os === os && p.arch === ar);
+  });
+  const sorted = supported.sort((a, b) => compare(a.version, b.version));
+  const latest = sorted.at(-1);
+  if (!latest) {
+    throw new Error("Version is unsupported for your platform.");
+  }
+  return {
+    versions: versions2,
+    supported,
+    latest: latest.version
+  };
+};
+var getProviderDownloadUrl = async (org, type, version) => {
+  const os = getOS();
+  const ar = getArch();
+  const url = [baseUrl, org, type, version, "download", os, ar].join("/");
+  const response = await fetch(url);
+  const result = await response.json();
+  return {
+    url: result.download_url,
+    shasum: result.shasum,
+    protocols: result.protocols
+  };
+};
+var getOS = () => {
+  const os = platform();
+  switch (os) {
+    case "linux":
+      return "linux";
+    case "win32":
+      return "windows";
+    case "darwin":
+      return "darwin";
+    case "freebsd":
+      return "freebsd";
+    case "openbsd":
+      return "openbsd";
+  }
+  throw new Error(`Unsupported OS Platform ${os}`);
+};
+var getArch = () => {
+  const ar = arch();
+  switch (ar) {
+    case "arm":
+      return "arm";
+    case "arm64":
+      return "arm64";
+    case "x64":
+      return "amd64";
+    case "ia32":
+      return "386";
+  }
+  throw new Error(`Unsupported Arch ${ar}`);
+};
+
+// src/terraform/plugin/download.ts
+var exists = async (file2) => {
+  try {
+    await stat2(file2);
+  } catch (error) {
+    return false;
+  }
+  return true;
+};
+var debug10 = createDebugger("Downloader");
+var downloadPlugin = async (location, org, type, version) => {
+  if (version === "latest") {
+    const { latest } = await getProviderVersions(org, type);
+    version = latest;
+  }
+  const file2 = join3(location, `${org}-${type}-${version}`);
+  const exist = await exists(file2);
+  if (!exist) {
+    debug10(type, "downloading...");
+    const info = await getProviderDownloadUrl(org, type, version);
+    const res = await fetch(info.url);
+    const buf = await res.bytes();
+    const zip = await jszip.loadAsync(buf);
+    const zipped = zip.filter((file3) => file3.startsWith("terraform-provider")).at(0);
+    if (!zipped) {
+      throw new Error(`Can't find the provider inside the downloaded zip file.`);
+    }
+    const binary = await zipped.async("nodebuffer");
+    debug10(type, "done");
+    await mkdir3(location, { recursive: true });
+    await writeFile2(file2, binary, {
+      mode: 509
+    });
+  } else {
+    debug10(type, "already downloaded");
+  }
+  return {
+    file: file2,
+    version
+  };
+};
+
+// src/terraform/plugin/server.ts
+import { spawn } from "child_process";
+var debug11 = createDebugger("Server");
+var createPluginServer = (props) => {
+  return new Promise((resolve2, reject) => {
+    debug11("init");
+    const process = spawn(`${props.file}`, ["-debug"]);
+    process.stderr.on("data", (data) => {
+      if (props.debug) {
+        const message = data.toString("utf8");
+        console.log(message);
+      }
+    });
+    process.stdout.once("data", (data) => {
+      try {
+        const message = data.toString("utf8");
+        const matches = message.match(/TF_REATTACH_PROVIDERS\=\'(.*)\'/);
+        if (matches && matches.length > 0) {
+          const match = matches[0];
+          const json = match.slice(23, -1);
+          const data2 = JSON.parse(json);
+          const entries2 = Object.values(data2);
+          if (entries2.length > 0) {
+            const entry = entries2[0];
+            const version = entry.ProtocolVersion;
+            const endpoint = entry.Addr.String;
+            debug11("started", endpoint);
+            resolve2({
+              kill() {
+                process.kill();
+              },
+              protocol: "tfplugin" + version.toFixed(1),
+              version,
+              endpoint
+            });
+            return;
+          }
+        }
+      } catch (error) {
+      }
+      debug11("failed");
+      reject(new Error("Failed to start the plugin"));
+    });
+  });
+};
+
+// src/terraform/plugin/schema.ts
+var NestingMode = {
+  INVALID: 0,
+  SINGLE: 1,
+  LIST: 2,
+  SET: 3,
+  MAP: 4,
+  GROUP: 5
+};
+var parseResourceSchema = (schemas) => {
+  const props = {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    if (schema.block) {
+      const block = parseBlock(schema.block);
+      props[name] = {
+        ...block,
+        version: block.version ?? schema.version
+      };
+    }
+  }
+  return props;
+};
+var parseProviderSchema = (schema) => {
+  if (schema.block) {
+    const block = parseBlock(schema.block);
+    return {
+      ...block,
+      version: block.version ?? schema.version
+    };
+  }
+  throw new Error("Invalid block");
+};
+var parseBlock = (block) => {
+  const properties = {};
+  for (const entry of block.attributes ?? []) {
+    properties[entry.name] = parseAttribute(entry);
+  }
+  for (const entry of block.blockTypes ?? []) {
+    properties[entry.typeName] = parseNestedBlock(entry);
+  }
+  if (block.deprecated) {
+    console.warn("Deprecated block");
+  }
+  return {
+    type: "object",
+    version: block.version,
+    description: block.description,
+    // deprecated: block.deprecated,
+    properties
+  };
+};
+var parseNestedBlock = (block) => {
+  const type = parseNestedBlockType(block);
+  const item = parseBlock(block.block);
+  const prop = {
+    optional: true,
+    required: false,
+    computed: false
+  };
+  if (type === "array" || type === "record") {
+    return {
+      ...prop,
+      type,
+      item
+    };
+  }
+  if (type === "array-object") {
+    return {
+      ...prop,
+      ...item,
+      type
+    };
+  }
+  return {
+    ...prop,
+    ...item
+  };
+};
+var parseNestedBlockType = (block) => {
+  if (block.nesting === NestingMode.SET) {
+    return "array";
+  }
+  if (block.nesting === NestingMode.LIST) {
+    if (block.maxItems?.eq(1)) {
+      return "array-object";
+    }
+    return "array";
+  }
+  if (block.nesting === NestingMode.MAP) {
+    return "record";
+  }
+  if (block.nesting === NestingMode.GROUP) {
+    return "object";
+  }
+  if (block.nesting === NestingMode.SINGLE) {
+    return "object";
+  }
+  throw new Error(`Invalid nested block type ${block.nesting}`);
+};
+var parseAttribute = (attr) => {
+  const prop = {
+    description: attr.description,
+    required: attr.required,
+    optional: attr.optional,
+    computed: attr.computed,
+    deprecated: attr.deprecated,
+    sensitive: attr.sensitive
+  };
+  if (attr.type) {
+    const json = JSON.parse(attr.type.toString("utf8"));
+    return {
+      ...prop,
+      ...parseAttributeType(json)
+    };
+  }
+  if (attr.nestedType) {
+    return {
+      ...prop,
+      ...parseBlock(attr.nestedType)
+      // properties: parseBlock(attr.nestedType).properties,
+    };
+  }
+  throw new Error("Empty attr");
+};
+var parseAttributeType = (item) => {
+  if (Array.isArray(item)) {
+    const type2 = parseType(item[0]);
+    if (type2 === "array" || type2 === "record" && item) {
+      const record = item[1];
+      return {
+        type: type2,
+        item: parseAttributeType(record)
+      };
+    }
+    if (type2 === "object") {
+      const object = item[1];
+      const properties = {};
+      for (const [name, prop] of Object.entries(object)) {
+        properties[name] = parseAttributeType(prop);
+      }
+      return {
+        type: type2,
+        properties
+      };
+    }
+    throw new Error("Invalid attribute type");
+  }
+  const type = parseType(item);
+  if (isLeafType(type)) {
+    return {
+      type
+    };
+  }
+  throw new Error(`Invalid attribute type`);
+};
+var isLeafType = (type) => {
+  return ["string", "number", "boolean", "unknown"].includes(type);
+};
+var parseType = (type) => {
+  if (type === "string") {
+    return "string";
+  }
+  if (type === "number") {
+    return "number";
+  }
+  if (type === "bool") {
+    return "boolean";
+  }
+  if (["set", "list"].includes(type)) {
+    return "array";
+  }
+  if (type === "object") {
+    return "object";
+  }
+  if (type === "map") {
+    return "record";
+  }
+  if (type === "dynamic") {
+    return "unknown";
+  }
+  throw new Error(`Invalid type: ${type}`);
+};
+
+// src/terraform/plugin/version/util.ts
+import { camelCase, snakeCase } from "change-case";
+import { pack, unpack } from "msgpackr";
+var encodeDynamicValue = (value) => {
+  return {
+    msgpack: pack(value),
+    json: value
+  };
+};
+var decodeDynamicValue = (value) => {
+  return unpack(value.msgpack);
+};
+var getResourceSchema = (resources, type) => {
+  const resource = resources[type];
+  if (!resource) {
+    throw new Error(`Unknown resource type: ${type}`);
+  }
+  return resource;
+};
+var formatAttributePath = (state) => {
+  if (!state) {
+    return [];
+  }
+  return state.map((item) => {
+    if (!item.steps) {
+      throw new Error("AttributePath should always have steps");
+    }
+    return item.steps.map((attr) => {
+      if ("attributeName" in attr) {
+        return attr.attributeName;
+      }
+      if ("elementKeyString" in attr) {
+        return attr.elementKeyString;
+      }
+      if ("elementKeyInt" in attr) {
+        return attr.elementKeyInt;
+      }
+      throw new Error("AttributePath step should always have an element");
+    });
+  });
+};
+var IncorrectType = class extends TypeError {
+  constructor(type, path) {
+    super(`${path.join(".")} should be a ${type}`);
+  }
+};
+var formatInputState = (schema, state, includeSchemaFields = true, path = []) => {
+  if (state === null) {
+    return null;
+  }
+  if (typeof state === "undefined") {
+    return null;
+  }
+  if (schema.type === "unknown") {
+    return state;
+  }
+  if (schema.type === "string") {
+    if (typeof state === "string") {
+      return state;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "number") {
+    if (typeof state === "number") {
+      return state;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "boolean") {
+    if (typeof state === "boolean") {
+      return state;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "array") {
+    if (Array.isArray(state)) {
+      return state.map((item, i) => formatInputState(schema.item, item, includeSchemaFields, [...path, i]));
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "record") {
+    if (typeof state === "object" && state !== null) {
+      const record = {};
+      for (const [key, value] of Object.entries(state)) {
+        record[key] = formatInputState(schema.item, value, includeSchemaFields, [...path, key]);
+      }
+      return record;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "object" || schema.type === "array-object") {
+    if (typeof state === "object" && state !== null) {
+      const object = {};
+      if (includeSchemaFields) {
+        for (const [key, prop] of Object.entries(schema.properties)) {
+          const value = state[camelCase(key)];
+          object[key] = formatInputState(prop, value, true, [...path, key]);
+        }
+      } else {
+        for (const [key, value] of Object.entries(state)) {
+          const prop = schema.properties[snakeCase(key)];
+          if (prop) {
+            object[key] = formatInputState(prop, value, false, [...path, key]);
+          }
+        }
+      }
+      if (schema.type === "array-object") {
+        return [object];
+      }
+      return object;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  throw new Error(`Unknown schema type: ${schema.type}`);
+};
+var formatOutputState = (schema, state, path = []) => {
+  if (state === null) {
+    return void 0;
+  }
+  if (schema.type === "array") {
+    if (Array.isArray(state)) {
+      return state.map((item, i) => formatOutputState(schema.item, item, [...path, i]));
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "record") {
+    if (typeof state === "object" && state !== null) {
+      const record = {};
+      for (const [key, value] of Object.entries(state)) {
+        record[key] = formatOutputState(schema.item, value, [...path, key]);
+      }
+      return record;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "object") {
+    if (typeof state === "object" && state !== null) {
+      const object = {};
+      for (const [key, prop] of Object.entries(schema.properties)) {
+        const value = state[key];
+        object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
+      }
+      return object;
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  if (schema.type === "array-object") {
+    if (Array.isArray(state)) {
+      if (state.length === 1) {
+        const object = {};
+        for (const [key, prop] of Object.entries(schema.properties)) {
+          const value = state[0][key];
+          object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
+        }
+        return object;
+      } else {
+        return void 0;
+      }
+    }
+    throw new IncorrectType(schema.type, path);
+  }
+  return state;
+};
+
+// src/terraform/plugin/version/5.ts
+var createPlugin5 = async ({
+  server,
+  client
+}) => {
+  const schema = await client.call("GetSchema");
+  const provider = parseProviderSchema(schema.provider);
+  const resources = parseResourceSchema(schema.resourceSchemas);
+  const dataSources = parseResourceSchema(schema.dataSourceSchemas);
+  return {
+    schema() {
+      return {
+        provider,
+        resources,
+        dataSources
+      };
+    },
+    async stop() {
+      await client.call("Stop");
+      server.kill();
+    },
+    async configure(config) {
+      const prepared = await client.call("PrepareProviderConfig", {
+        config: encodeDynamicValue(formatInputState(provider, config))
+      });
+      await client.call("Configure", {
+        config: prepared.preparedConfig
+      });
+    },
+    async readResource(type, state) {
+      const schema2 = getResourceSchema(resources, type);
+      const read = await client.call("ReadResource", {
+        typeName: type,
+        currentState: encodeDynamicValue(formatInputState(schema2, state))
+      });
+      return formatOutputState(schema2, decodeDynamicValue(read.newState));
+    },
+    async readDataSource(type, state) {
+      const schema2 = getResourceSchema(dataSources, type);
+      const read = await client.call("ReadDataSource", {
+        typeName: type,
+        config: encodeDynamicValue(formatInputState(schema2, state))
+      });
+      return formatOutputState(schema2, decodeDynamicValue(read.state));
+    },
+    async validateResource(type, state) {
+      const schema2 = getResourceSchema(resources, type);
+      await client.call("ValidateResourceTypeConfig", {
+        typeName: type,
+        config: encodeDynamicValue(formatInputState(schema2, state))
+      });
+    },
+    async planResourceChange(type, priorState, proposedState) {
+      const schema2 = getResourceSchema(resources, type);
+      const preparedPriorState = formatInputState(schema2, priorState);
+      const preparedProposedState = formatInputState(schema2, proposedState);
+      const plan = await client.call("PlanResourceChange", {
+        typeName: type,
+        priorState: encodeDynamicValue(preparedPriorState),
+        proposedNewState: encodeDynamicValue(preparedProposedState),
+        config: encodeDynamicValue(preparedProposedState)
+      });
+      const plannedState = decodeDynamicValue(plan.plannedState);
+      const requiresReplace = formatAttributePath(plan.requiresReplace);
+      return {
+        requiresReplace,
+        plannedState
+      };
+    },
+    async applyResourceChange(type, priorState, proposedState) {
+      const schema2 = getResourceSchema(resources, type);
+      const preparedPriorState = formatInputState(schema2, priorState);
+      const preparedProposedState = formatInputState(schema2, proposedState);
+      const apply = await client.call("ApplyResourceChange", {
+        typeName: type,
+        priorState: encodeDynamicValue(preparedPriorState),
+        plannedState: encodeDynamicValue(preparedProposedState),
+        config: encodeDynamicValue(preparedProposedState)
+      });
+      return formatOutputState(schema2, decodeDynamicValue(apply.newState));
+    }
+  };
+};
+
+// src/terraform/plugin/version/6.ts
+var createPlugin6 = async ({
+  server,
+  client
+}) => {
+  const schema = await client.call("GetProviderSchema");
+  const provider = parseProviderSchema(schema.provider);
+  const resources = parseResourceSchema(schema.resourceSchemas);
+  const dataSources = parseResourceSchema(schema.dataSourceSchemas);
+  return {
+    schema() {
+      return {
+        provider,
+        resources,
+        dataSources
+      };
+    },
+    async stop() {
+      await client.call("StopProvider");
+      server.kill();
+    },
+    async configure(config) {
+      const prepared = await client.call("ValidateProviderConfig", {
+        config: encodeDynamicValue(formatInputState(provider, config))
+      });
+      await client.call("ConfigureProvider", {
+        config: prepared.preparedConfig
+      });
+    },
+    async readResource(type, state) {
+      const schema2 = getResourceSchema(resources, type);
+      const read = await client.call("ReadResource", {
+        typeName: type,
+        currentState: encodeDynamicValue(formatInputState(schema2, state))
+      });
+      return formatOutputState(schema2, decodeDynamicValue(read.newState));
+    },
+    async readDataSource(type, state) {
+      const schema2 = getResourceSchema(dataSources, type);
+      const read = await client.call("ReadDataSource", {
+        typeName: type,
+        config: encodeDynamicValue(formatInputState(schema2, state))
+      });
+      return formatOutputState(schema2, decodeDynamicValue(read.state));
+    },
+    async validateResource(type, state) {
+      const schema2 = getResourceSchema(resources, type);
+      await client.call("ValidateResourceConfig", {
+        typeName: type,
+        config: encodeDynamicValue(formatInputState(schema2, state))
+      });
+    },
+    async planResourceChange(type, priorState, proposedState) {
+      const schema2 = getResourceSchema(resources, type);
+      const preparedPriorState = formatInputState(schema2, priorState);
+      const preparedProposedState = formatInputState(schema2, proposedState);
+      const plan = await client.call("PlanResourceChange", {
+        typeName: type,
+        priorState: encodeDynamicValue(preparedPriorState),
+        proposedNewState: encodeDynamicValue(preparedProposedState),
+        config: encodeDynamicValue(preparedProposedState)
+      });
+      const plannedState = decodeDynamicValue(plan.plannedState);
+      const requiresReplace = formatAttributePath(plan.requiresReplace);
+      return {
+        requiresReplace,
+        plannedState
+      };
+    },
+    async applyResourceChange(type, priorState, proposedState) {
+      const schema2 = getResourceSchema(resources, type);
+      const preparedPriorState = formatInputState(schema2, priorState);
+      const preparedProposedState = formatInputState(schema2, proposedState);
+      const apply = await client.call("ApplyResourceChange", {
+        typeName: type,
+        priorState: encodeDynamicValue(preparedPriorState),
+        plannedState: encodeDynamicValue(preparedProposedState),
+        config: encodeDynamicValue(preparedProposedState)
+      });
+      return formatOutputState(schema2, decodeDynamicValue(apply.newState));
+    }
+    // async applyResourceChange(
+    // 	type: string,
+    // 	priorState: Record<string, unknown> | null,
+    // 	proposedState: Record<string, unknown> | null
+    // ) {
+    // 	const schema = getResourceSchema(resources, type)
+    // 	const preparedPriorState = formatInputState(schema, priorState)
+    // 	const preparedProposedState = formatInputState(schema, proposedState)
+    // 	const plan = await client.call('PlanResourceChange', {
+    // 		typeName: type,
+    // 		priorState: encodeDynamicValue(preparedPriorState),
+    // 		proposedNewState: encodeDynamicValue(preparedProposedState),
+    // 		config: encodeDynamicValue(preparedProposedState),
+    // 	})
+    // 	const plannedState = decodeDynamicValue(plan.plannedState)
+    // 	const apply = await client.call('ApplyResourceChange', {
+    // 		typeName: type,
+    // 		priorState: encodeDynamicValue(preparedPriorState),
+    // 		plannedState: encodeDynamicValue(plannedState),
+    // 		config: encodeDynamicValue(plannedState),
+    // 	})
+    // 	return formatOutputState(schema, decodeDynamicValue(apply.newState))
+    // },
+  };
+};
+
+// src/terraform/provider.ts
+import { mkdir as mkdir4, writeFile as writeFile3 } from "fs/promises";
+import { join as join4 } from "path";
+
+// src/terraform/type-gen.ts
+import { camelCase as camelCase2, pascalCase } from "change-case";
+var tab = (indent) => {
+  return "	".repeat(indent);
+};
+var generateTypes = (providers, resources, dataSources) => {
+  return [
+    generateImport("@awsless/formation"),
+    "type _Record<T> = Record<string, T>",
+    generateNamespace(providers, (name, prop, indent) => {
+      return `${tab(indent)}export const ${name}: ${generatePropertyInputConst(prop, indent)}`;
+    }),
+    generateNamespace(resources, (name, prop, indent) => {
+      const typeName = pascalCase(name);
+      return [
+        // `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        // `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        // `${tab(indent)}export declare const ${typeName}: ResourceClass<${typeName}Input, ${typeName}Output>`,
+        `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        `${tab(indent)}export class ${typeName} {`,
+        `${tab(indent + 1)}constructor(parent: f.Group, id: string, props: ${typeName}Input, config?:f.ResourceConfig)`,
+        `${tab(indent + 1)}readonly $: f.ResourceMeta<${typeName}Input, ${typeName}Output>`,
+        generateClassProperties(prop, indent + 1),
+        `${tab(indent)}}`
+      ].join("\n\n");
+    }),
+    generateNamespace(dataSources, (name, prop, indent) => {
+      const typeName = pascalCase(name);
+      return [
+        `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        `${tab(indent)}export const get${typeName}:f.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
+      ].join("\n\n");
+    })
+  ].join("\n\n");
+};
+var generateImport = (from) => {
+  return `import * as f from '${from}'`;
+};
+var generatePropertyInputConst = (prop, indent) => {
+  return generateValue(prop, {
+    depth: 0,
+    indent: indent + 1,
+    wrap: (v, _, ctx) => {
+      return `${v}${ctx.depth === 1 ? "," : ""}`;
+    },
+    filter: () => true,
+    optional: (p) => p.optional ?? false
+  });
+};
+var generatePropertyInputType = (prop, indent) => {
+  return generateValue(prop, {
+    depth: 0,
+    indent: indent + 1,
+    wrap: (v, p, ctx) => {
+      return ctx.depth > 0 ? p.optional ? `f.OptionalInput<${v}>` : `f.Input<${v}>` : v;
+    },
+    filter: (prop2) => !(prop2.computed && typeof prop2.optional === "undefined" && typeof prop2.required === "undefined"),
+    optional: (p) => p.optional ?? false
+  });
+};
+var generatePropertyOutputType = (prop, indent) => {
+  return generateValue(prop, {
+    indent: indent + 1,
+    depth: 0,
+    wrap: (v, p, ctx) => ctx.depth === 1 ? p.optional && !p.computed ? `f.OptionalOutput<${v}>` : `f.Output<${v}>` : v,
+    filter: () => true,
+    readonly: true,
+    // required: true,
+    optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false
+  });
+};
+var generateClassProperties = (prop, indent) => {
+  if (prop.type !== "object") {
+    return "";
+  }
+  return Object.entries(prop.properties).map(([name, prop2]) => {
+    return [
+      prop2.description ? [`
+`, `	`.repeat(indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
+      `	`.repeat(indent),
+      "readonly ",
+      camelCase2(name),
+      // ctx.optional(prop, ctx) ? '?' : '',
+      ": ",
+      generateValue(prop2, {
+        readonly: true,
+        filter: () => true,
+        optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false,
+        wrap: (v, p, ctx) => {
+          return ctx.depth === 1 ? p.optional && !p.computed ? `f.OptionalOutput<${v}>` : `f.Output<${v}>` : v;
+        },
+        // ctx.depth === 1 ? `f.Output<${p.optional && !p.computed ? `${v} | undefined` : v}>` : v,
+        indent: indent + 1,
+        depth: 1
+      })
+    ].join("");
+  }).join("\n");
+};
+var groupByNamespace = (resources, minLevel, maxLevel) => {
+  const grouped = {};
+  const types = Object.keys(resources).sort();
+  for (const type of types) {
+    const names = type.split("_");
+    if (names.length < minLevel) {
+      throw new Error(`Resource not properly namespaced: ${type}`);
+    }
+    let current = grouped;
+    let count = Math.min(maxLevel, names.length - 1);
+    while (count--) {
+      const ns = camelCase2(names.shift());
+      if (!current[ns]) {
+        current[ns] = {};
+      }
+      current = current[ns];
+    }
+    const name = pascalCase(names.join("_"));
+    current[name] = type;
+  }
+  return grouped;
+};
+var generateNamespace = (resources, render) => {
+  const grouped = groupByNamespace(resources, 1, 2);
+  const renderNamespace = (name, group, indent) => {
+    if (name === "default") {
+      name = "$default";
+    }
+    return [
+      `${tab(indent)}export namespace ${name.toLowerCase()} {`,
+      Object.entries(group).map(([name2, entry]) => {
+        if (typeof entry !== "string") {
+          return renderNamespace(name2, entry, indent + 1);
+        } else {
+          return render(name2, resources[entry], indent + 1);
+        }
+      }).join("\n"),
+      `${tab(indent)}}`
+    ].join("\n");
+  };
+  const code = [`declare module '@awsless/formation' {`];
+  code.push(renderNamespace("$", grouped, 1));
+  code.push(`}`);
+  return code.join("\n");
+};
+var generateValue = (prop, ctx) => {
+  if (["string", "number", "boolean", "unknown"].includes(prop.type)) {
+    return ctx.wrap(prop.type, prop, ctx);
+  }
+  if (prop.type === "array") {
+    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
+    const array = ctx.readonly ? `ReadonlyArray<${type}>` : `Array<${type}>`;
+    return ctx.wrap(array, prop, ctx);
+  }
+  if (prop.type === "record") {
+    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
+    const record = ctx.readonly ? `Readonly<_Record<${type}>>` : `_Record<${type}>`;
+    return ctx.wrap(record, prop, ctx);
+  }
+  if (prop.type === "object" || prop.type === "array-object") {
+    const type = [
+      "{",
+      Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(
+        ([name, prop2]) => [
+          prop2.description ? [`
+`, `	`.repeat(ctx.indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
+          `	`.repeat(ctx.indent),
+          // ctx.readonly ? "readonly " : "",
+          camelCase2(name),
+          ctx.optional(prop2, ctx) ? "?" : "",
+          ": ",
+          generateValue(prop2, { ...ctx, indent: ctx.indent + 1, depth: ctx.depth + 1 })
+        ].join("")
+      ).join("\n"),
+      `${`	`.repeat(ctx.indent - 1)}}`
+    ].join("\n");
+    const object = ctx.readonly ? `Readonly<${type}>` : type;
+    return ctx.wrap(object, prop, ctx);
+  }
+  throw new Error(`Unknown property type: ${prop.type}`);
+};
+
+// src/terraform/provider.ts
+var TerraformProvider = class {
+  constructor(type, id, createPlugin, config) {
+    this.type = type;
+    this.id = id;
+    this.createPlugin = createPlugin;
+    this.config = config;
+  }
+  configured;
+  plugin;
+  async configure() {
+    const plugin = await this.prepare();
+    if (!this.configured) {
+      this.configured = plugin.configure(this.config);
+    }
+    await this.configured;
+    return plugin;
+  }
+  prepare() {
+    if (!this.plugin) {
+      this.plugin = this.createPlugin();
+    }
+    return this.plugin;
+  }
+  async destroy() {
+    if (this.plugin) {
+      const plugin = await this.plugin;
+      plugin.stop();
+      this.plugin = void 0;
+      this.configured = void 0;
+    }
+  }
+  ownResource(id) {
+    return `terraform:${this.type}:${this.id}` === id;
+  }
+  async getResource({ type, state }) {
+    const plugin = await this.configure();
+    const newState = await plugin.readResource(type, state);
+    if (!newState) {
+      throw new ResourceNotFound();
+    }
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async createResource({ type, state }) {
+    const plugin = await this.configure();
+    const newState = await plugin.applyResourceChange(type, null, state);
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async updateResource({ type, priorState, proposedState }) {
+    const plugin = await this.configure();
+    const { requiresReplace } = await plugin.planResourceChange(type, priorState, proposedState);
+    if (requiresReplace.length > 0) {
+      const formattedAttrs = requiresReplace.map((p) => p.join(".")).join('", "');
+      throw new Error(
+        `Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`
+      );
+    }
+    const newState = await plugin.applyResourceChange(type, priorState, proposedState);
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async deleteResource({ type, state }) {
+    const plugin = await this.configure();
+    try {
+      await plugin.applyResourceChange(type, state, null);
+    } catch (error) {
+      try {
+        const newState = await plugin.readResource(type, state);
+        if (!newState) {
+          throw new ResourceNotFound();
+        }
+      } catch (_) {
+      }
+      throw error;
+    }
+  }
+  async getData({ type, state }) {
+    const plugin = await this.configure();
+    const data = await plugin.readDataSource(type, state);
+    if (!data) {
+      throw new Error(`Data source not found ${type}`);
+    }
+    return {
+      state: data
+    };
+  }
+  async generateTypes(dir) {
+    const plugin = await this.prepare();
+    const schema = plugin.schema();
+    const types = generateTypes(
+      {
+        [`${this.type}_provider`]: schema.provider
+      },
+      schema.resources,
+      schema.dataSources
+    );
+    await mkdir4(dir, { recursive: true });
+    await writeFile3(join4(dir, `${this.type}.d.ts`), types);
+    await this.destroy();
+  }
+};
+
+// src/terraform/installer.ts
+var debug12 = createDebugger("Plugin");
+var Terraform = class {
+  constructor(props) {
+    this.props = props;
+  }
+  async install(org, type, version = "latest") {
+    const { file: file2, version: realVersion } = await downloadPlugin(this.props.providerLocation, org, type, version);
+    return (input, config) => {
+      const createLazyPlugin = async () => {
+        const server = await retry(3, () => createPluginServer({ file: file2, debug: config?.debug }));
+        const client = await retry(3, () => createPluginClient(server));
+        const plugins = {
+          5: () => createPlugin5({ server, client }),
+          6: () => createPlugin6({ server, client })
+        };
+        const plugin = await plugins[server.version]?.();
+        debug12(org, type, realVersion);
+        if (!plugin) {
+          throw new Error(`No plugin client available for protocol version ${server.version}`);
+        }
+        return plugin;
+      };
+      return new TerraformProvider(type, config?.id ?? "default", createLazyPlugin, input);
+    };
+  }
+};
+var retry = async (tries, cb) => {
+  let latestError;
+  while (--tries) {
+    try {
+      const result = await cb();
+      return result;
+    } catch (error) {
+      latestError = error;
+    }
+  }
+  throw latestError;
+};
+
+// src/terraform/resource.ts
+import { snakeCase as snakeCase2 } from "change-case";
+
+// src/formation/urn.ts
+var createUrn = (tag, type, name, parentUrn) => {
+  return `${parentUrn ? parentUrn : "urn"}:${tag}:${type}:{${name}}`;
+};
+
+// src/formation/meta.ts
+var createMeta = (tag, provider, parent, type, logicalId, input, config) => {
+  const urn = createUrn(tag, type, logicalId, parent.urn);
+  const stack = findParentStack(parent);
+  const dependencies = /* @__PURE__ */ new Set();
+  let output2;
+  const linkMetaDep = (dep) => {
+    if (dep.urn === urn) {
+      throw new Error("You can't depend on yourself");
+    }
+    dependencies.add(dep.urn);
+  };
+  for (const dep of findInputDeps(input)) {
+    linkMetaDep(dep);
+  }
+  for (const dep of config?.dependsOn ?? []) {
+    linkMetaDep(dep.$);
+  }
+  return {
+    tag,
+    urn,
+    logicalId,
+    type,
+    stack,
+    provider,
+    input,
+    config,
+    dependencies,
+    // attach(value) {
+    // 	resource = value
+    // },
+    // dependOn(...resources: Resource[]) {},
+    attachDependencies(props) {
+      for (const dep of findInputDeps(props)) {
+        linkMetaDep(dep);
+      }
+    },
+    resolve(data) {
+      output2 = data;
+    },
+    output(cb) {
+      return new Output(/* @__PURE__ */ new Set([this]), (resolve2) => {
+        if (!output2) {
+          throw new Error(`Unresolved output for ${tag}: ${urn}`);
+        }
+        resolve2(cb(output2));
+      });
+    }
+  };
+};
+
+// src/terraform/resource.ts
+var createNamespaceProxy = (cb, target = {}) => {
+  const cache = /* @__PURE__ */ new Map();
+  return new Proxy(target, {
+    get(_, key) {
+      if (!cache.has(key)) {
+        cache.set(key, cb(key));
+      }
+      return cache.get(key);
+    },
+    set(_, key) {
+      throw new Error(`Cannot assign to ${key} because it is a read-only property.`);
+    }
+  });
+};
+var createClassProxy = (construct, get2) => {
+  return new Proxy(class {
+  }, {
+    construct(_, args) {
+      return construct(...args);
+    },
+    get(_, key) {
+      if (key === "get") {
+        return (...args) => {
+          return get2(...args);
+        };
+      }
+      return;
+    }
+  });
+};
+var createRecursiveProxy = ({
+  resource,
+  dataSource
+}) => {
+  const createProxy = (names) => {
+    return createNamespaceProxy((name) => {
+      const ns = [...names, name];
+      if (name === name.toLowerCase()) {
+        return createProxy(ns);
+      } else if (name.startsWith("get")) {
+        return (...args) => {
+          return dataSource([...names, name.substring(3)], ...args);
+        };
+      } else {
+        return createClassProxy(
+          (...args) => {
+            return resource(ns, ...args);
+          },
+          (...args) => {
+            return dataSource(ns, ...args);
+          }
+        );
+      }
+    });
+  };
+  return createProxy([]);
+};
+var $ = createRecursiveProxy({
+  resource: (ns, parent, id, input, config) => {
+    const type = snakeCase2(ns.join("_"));
+    const provider = `terraform:${ns[0]}:${config?.provider ?? "default"}`;
+    const $2 = createMeta("resource", provider, parent, type, id, input, config);
+    const resource = createNamespaceProxy(
+      (key) => {
+        if (key === "$") {
+          return $2;
+        }
+        return $2.output((data) => data[key]);
+      },
+      { $: $2 }
+    );
+    parent.add(resource);
+    return resource;
+  },
+  // external: (ns: string[], id: string, input: State, config?: ResourceConfig) => {
+  // 	const type = snakeCase(ns.join('_'))
+  // 	const provider = `terraform:${ns[0]}:${config?.provider ?? 'default'}`
+  // 	const $ = createResourceMeta(provider, type, id, input, config)
+  // 	const resource = createNamespaceProxy(
+  // 		key => {
+  // 			if (key === '$') {
+  // 				return $
+  // 			}
+  // 			return $.output(data => data[key])
+  // 		},
+  // 		{ $ }
+  // 	) as Resource
+  // 	parent.add(resource)
+  // 	return resource
+  // },
+  // (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig)
+  dataSource: (ns, parent, id, input, config) => {
+    const type = snakeCase2(ns.join("_"));
+    const provider = `terraform:${ns[0]}:${config?.provider ?? "default"}`;
+    const $2 = createMeta("data", provider, parent, type, id, input, config);
+    const dataSource = createNamespaceProxy(
+      (key) => {
+        if (key === "$") {
+          return $2;
+        }
+        return $2.output((data) => data[key]);
+      },
+      { $: $2 }
+    );
+    parent.add(dataSource);
+    return dataSource;
+  }
+});
+
+// src/custom/resource.ts
+var createCustomResourceClass = (providerId, resourceType) => {
+  return new Proxy(class {
+  }, {
+    construct(_, [parent, id, input, config]) {
+      const $2 = createMeta("resource", `custom:${providerId}`, parent, resourceType, id, input, config);
+      const node = new Proxy(
+        { $: $2 },
+        {
+          get(_2, key) {
+            if (key === "$") {
+              return $2;
+            }
+            return $2.output((data) => data[key]);
+          }
+        }
+      );
+      parent.add(node);
+      return node;
+    }
+    // get(_, key: string) {
+    // 	if (key === 'get') {
+    // 		return (...args: any[]) => {
+    // 			return get(...args)
+    // 		}
+    // 	}
+    // 	return
+    // },
+  });
+};
+
+// src/custom/provider.ts
+var createCustomProvider = (providerId, resourceProviders) => {
+  const version = 1;
+  const getProvider = (type) => {
+    const provider = resourceProviders[type];
+    if (!provider) {
+      throw new Error(`The "${providerId}" provider doesn't support the "${type}" resource type.`);
+    }
+    return provider;
+  };
+  return {
+    ownResource(id) {
+      return id === `custom:${providerId}`;
+    },
+    async getResource({ type, ...props }) {
+      const provider = getProvider(type);
+      if (!provider.getResource) {
+        return {
+          version,
+          state: props.state
+        };
+      }
+      return {
+        version,
+        state: await provider.getResource(props)
+      };
+    },
+    async createResource({ type, ...props }) {
+      const provider = getProvider(type);
+      if (!provider.createResource) {
+        return {
+          version,
+          state: props.state
+        };
+      }
+      return {
+        version,
+        state: await provider.createResource(props)
+      };
+    },
+    async updateResource({ type, ...props }) {
+      const provider = getProvider(type);
+      if (!provider.updateResource) {
+        return {
+          version,
+          state: props.proposedState
+        };
+      }
+      return {
+        version,
+        state: await provider.updateResource(props)
+      };
+    },
+    async deleteResource({ type, ...props }) {
+      await getProvider(type).deleteResource?.(props);
+    },
+    async getData({ type, ...props }) {
+      return {
+        version,
+        state: await getProvider(type).getData?.(props) ?? {}
+      };
+    }
+  };
+};
 export {
+  $,
   App,
   AppError,
-  Asset,
-  FileAsset,
-  Node,
+  DynamoLockBackend,
+  FileLockBackend,
+  FileStateBackend,
+  Future,
+  Group,
+  MemoryLockBackend,
+  MemoryStateBackend,
   Output,
-  RemoteAsset,
-  Resource,
   ResourceAlreadyExists,
   ResourceError,
   ResourceNotFound,
+  S3StateBackend,
   Stack,
-  StackError,
-  StringAsset,
+  Terraform,
   WorkSpace,
-  aws_exports as aws,
-  combine,
-  findResources,
-  flatten,
-  local_exports as local,
-  unwrap
+  createCustomProvider,
+  createCustomResourceClass,
+  createDebugger,
+  deferredOutput,
+  enableDebug,
+  findInputDeps,
+  output,
+  resolveInputs
 };

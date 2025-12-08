@@ -1,0 +1,40 @@
+{
+	"name": "@terraforge/core",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"scripts": {
+		"build": "bun src/index.ts --format cjs,esm --dts --clean",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@aws-sdk/client-dynamodb": "3.363.0",
+		"@aws-sdk/client-s3": "^3.779.0",
+		"@aws-sdk/types": "3.329.0",
+		"@aws-sdk/util-dynamodb": "^3.777.0",
+		"async-on-exit": "^0.1.0",
+		"get-wild": "^3.0.2",
+		"graphology": "^0.26.0",
+		"graphology-dag": "^0.4.1",
+		"p-limit": "^6.2.0",
+		"proper-lockfile": "^4.1.2",
+		"uuid": "^11.1.0"
+	},
+	"devDependencies": {
+		"@types/proper-lockfile": "^4.1.4"
+	},
+	"files": [
+		"dist"
+	],
+	"license": "MIT"
+}

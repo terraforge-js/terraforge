@@ -16,7 +16,7 @@
 	"parserOptions": {
 		"ecmaVersion": "latest",
 		"sourceType": "module",
-		"project": ["./tsconfig.json", "./services/**/tsconfig.json"]
+		"project": ["./tsconfig.json", "./services/**/tsconfig.json", "./packages/**/tsconfig.json"]
 	},
 	"rules": {
 		// "prettier/prettier": ["error"],
