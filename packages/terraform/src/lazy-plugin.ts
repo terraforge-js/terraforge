@@ -1,5 +1,3 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { createPluginClient } from './plugin/client'
 import { downloadPlugin, DownloadPluginProps } from './plugin/download'
 import { createPluginServer } from './plugin/server'

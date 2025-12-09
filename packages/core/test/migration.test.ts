@@ -1,4 +1,4 @@
-import { migrateAppState } from '../src/formation/workspace/state/migrate'
+import { migrateAppState } from '../src/workspace/state/migrate'
 
 describe('migration', () => {
 	it('update state', async () => {

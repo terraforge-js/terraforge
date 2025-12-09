@@ -1,6 +1,6 @@
-import { Group } from '../formation/group'
-import { createMeta, State } from '../formation/meta'
-import { Resource, ResourceClass, ResourceConfig } from '../formation/resource'
+import { Group } from '../group'
+import { createMeta, State } from '../meta'
+import { Resource, ResourceClass, ResourceConfig } from '../resource'
 
 export const createCustomResourceClass = <I extends State, O extends State>(
 	providerId: string,

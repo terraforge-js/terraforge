@@ -1,5 +1,5 @@
-import { State } from '../formation/meta'
-import { CreateProps, DeleteProps, GetDataProps, GetProps, Provider, UpdateProps } from '../formation/provider'
+import { State } from '../meta'
+import { CreateProps, DeleteProps, GetDataProps, GetProps, Provider, UpdateProps } from '../provider'
 
 export type CustomResourceProvider = Partial<{
 	getResource?(props: Omit<GetProps, 'type'>): Promise<State>

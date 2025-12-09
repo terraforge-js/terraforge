@@ -1,7 +1,6 @@
 {
 	"name": "@terraforge/terraform",
-	"version": "1.0.0",
-	"private": true,
+	"version": "0.0.3",
 	"type": "module",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -16,6 +15,7 @@
 	},
 	"scripts": {
 		"build": "bunup src/index.ts --format esm --dts --clean --target node --packages external --out-dir ./dist",
+		"prepublishOnly": "bun run build",
 		"test": "bun test"
 	},
 	"dependencies": {

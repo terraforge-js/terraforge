@@ -14,6 +14,7 @@ export const generateTypes = (
 		generateImport('c', '@terraforge/core'),
 		generateImport('t', '@terraforge/terraform'),
 		'type _Record<T> = Record<string, T>',
+		generateInstallFunction(providers),
 		generateNamespace(providers, (name, prop, indent) => {
 			const typeName = name.toLowerCase()
 			return `${tab(indent)}export function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`
@@ -50,6 +51,13 @@ export const generateTypes = (
 const generateImport = (name: string, from: string) => {
 	// return `import { ${imports.join(', ')} } from '${from}'`
 	return `import * as ${name} from '${from}'`
+}
+
+const generateInstallFunction = (resources: Record<string, Property>) => {
+	return generateNamespace(resources, (name, _prop, indent) => {
+		const typeName = name.toLowerCase()
+		return `${tab(indent)}export namespace ${typeName} { export function install(props?: t.InstallProps): Promise<void> }`
+	})
 }
 
 const generatePropertyInputConst = (prop: Property, indent: number) => {

@@ -1636,11 +1636,11 @@ var createResourceProxy = (name) => {
 // src/api.ts
 var createTerraformAPI = (props) => {
   const resource = createResourceProxy(props.namespace);
-  const install = async ({ location }) => {
-    await downloadPlugin({ ...props.provider, location });
+  const install = async (installProps) => {
+    await downloadPlugin({ ...props.provider, ...installProps });
   };
-  const createPlugin = ({ location }) => {
-    return createLazyPlugin({ ...props.provider, location });
+  const createPlugin = (pluginProps) => {
+    return createLazyPlugin({ ...props.provider, ...pluginProps });
   };
   return new Proxy(() => {}, {
     apply(_, _this, [input, config]) {
@@ -1664,6 +1664,7 @@ var generateTypes = (providers, resources, dataSources) => {
     generateImport("c", "@terraforge/core"),
     generateImport("t", "@terraforge/terraform"),
     "type _Record<T> = Record<string, T>",
+    generateInstallFunction(providers),
     generateNamespace(providers, (name, prop, indent) => {
       const typeName = name.toLowerCase();
       return `${tab(indent)}export function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`;
@@ -1698,6 +1699,12 @@ var generateTypes = (providers, resources, dataSources) => {
 };
 var generateImport = (name, from) => {
   return `import * as ${name} from '${from}'`;
+};
+var generateInstallFunction = (resources) => {
+  return generateNamespace(resources, (name, _prop, indent) => {
+    const typeName = name.toLowerCase();
+    return `${tab(indent)}export namespace ${typeName} { export function install(props?: t.InstallProps): Promise<void> }`;
+  });
 };
 var generatePropertyInputConst = (prop, indent) => {
   return generateValue(prop, {

@@ -9,7 +9,7 @@ export type TerraformProviderConfig = {
 	location?: string
 }
 
-type InstallProps = {
+export type InstallProps = {
 	location?: string
 }
 
@@ -22,12 +22,12 @@ export const createTerraformAPI = <T>(props: {
 	}
 }): T => {
 	const resource = createResourceProxy(props.namespace)
-	const install = async ({ location }: InstallProps) => {
-		await downloadPlugin({ ...props.provider, location })
+	const install = async (installProps?: InstallProps) => {
+		await downloadPlugin({ ...props.provider, ...installProps })
 	}
 
-	const createPlugin = ({ location }: { location?: string }) => {
-		return createLazyPlugin({ ...props.provider, location })
+	const createPlugin = (pluginProps?: { location?: string }) => {
+		return createLazyPlugin({ ...props.provider, ...pluginProps })
 	}
 
 	return new Proxy(() => {}, {

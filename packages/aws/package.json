@@ -1,7 +1,6 @@
 {
 	"name": "@terraforge/aws",
 	"version": "6.25.0",
-	"private": true,
 	"type": "module",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -14,7 +13,7 @@
 	"scripts": {
 		"typegen": "bun ../terraform/cli/build-package --org hashicorp --type aws",
 		"build": "bunup src/index.ts --format esm --dts --clean --target node --packages external --out-dir ./dist",
-		"prepublish": "bun run typegen; bun run build"
+		"prepublishOnly": "bun run typegen; bun run build"
 	},
 	"dependencies": {
 		"@terraforge/terraform": "workspace:*",

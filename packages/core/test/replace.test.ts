@@ -1,5 +1,5 @@
 import { App, Stack } from '../src'
-import { requiresReplacement } from '../src/formation/workspace/replacement'
+import { requiresReplacement } from '../src/workspace/replacement'
 import { createMockWorkSpace, Resource } from './_mock'
 
 describe('replace resource', () => {

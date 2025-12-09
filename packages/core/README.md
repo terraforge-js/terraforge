@@ -15,7 +15,7 @@ The most used IaC solutions are slow & don't effectively leverage diffing to spe
 Install with (NPM):
 
 ```
-npm i @terraforge/core @terraforge/terraform
+npm i @terraforge/core @terraforge/aws
 ```
 
 ## Example
@@ -33,13 +33,7 @@ In this example, we will use a local file lock & state provider.
 
 ```ts
 import { App, FileStateBackend, FileLockBackend, Stack, WorkSpace } from '@terraforge/core'
-import { Terraform, $ } from '@terraforge/terraform'
-
-const terraform = new Terraform({
-	providerLocation: './providers'
-})
-
-const aws = await terraform.install('hashicorp', 'aws', '5.93.0')
+import { aws } from '@terraforge/aws'
 
 const workspace = new WorkSpace({
 	providers: [
@@ -61,10 +55,10 @@ This example illustrates how simple it is to define multi-stack resources withou
 ```ts
 const app = new App('todo-app')
 const storage = new Stack(app, 'storage')
-const list = new $.aws.s3.Bucket(storage, 'list', {})
+const list = new aws.s3.Bucket(storage, 'list', {})
 
 const items = new Stack(app, 'items')
-const todo = new $.aws.s3.BucketObject(items, 'item', {
+const todo = new aws.s3.BucketObject(items, 'item', {
 	bucket: list.bucket,
 	key: 'item-1',
 	content: JSON.stringify({
