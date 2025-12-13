@@ -1,4 +1,4 @@
-import { App, Output, Stack } from '@terraforge/core'
+import { App, getMeta, Output, Stack } from '@terraforge/core'
 import { createMockWorkSpace, Resource } from './_mock'
 
 describe('Lazy resource property', () => {
@@ -13,6 +13,8 @@ describe('Lazy resource property', () => {
 		const r2 = new Resource(stack, 'r2', { id: '2' })
 		deps.push(r2.id)
 
+		getMeta(r1)
+
 		await workspace.deploy(app)
 
 		const appState = await stateBackend.get(app.urn)
@@ -24,8 +26,8 @@ describe('Lazy resource property', () => {
 				[stack.urn]: {
 					name: stack.name,
 					nodes: {
-						[r1.$.urn]: expect.objectContaining({ tag: 'resource' }),
-						[r2.$.urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r1).urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r2).urn]: expect.objectContaining({ tag: 'resource' }),
 					},
 				},
 			},

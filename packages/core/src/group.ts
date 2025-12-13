@@ -1,5 +1,5 @@
 import { DataSource } from './data-source.ts'
-import { isDataSource, isNode, isResource, type Node } from './node.ts'
+import { getMeta, isDataSource, isNode, isResource, type Node } from './node.ts'
 import { Resource } from './resource.ts'
 import { URN } from './urn.ts'
 
@@ -29,12 +29,14 @@ export class Group {
 
 	protected addChild(child: Group | Node) {
 		if (isNode(child)) {
+			const meta = getMeta(child)
 			const duplicate = this.children
 				.filter(c => isResource(c))
-				.find(c => c.$.type === child.$.type && c.$.logicalId === child.$.logicalId)
+				.map(c => getMeta(c))
+				.find(c => c.type === meta.type && c.logicalId === meta.logicalId)
 
 			if (duplicate) {
-				throw new Error(`Duplicate node found: ${child.$.type}:${child.$.logicalId}`)
+				throw new Error(`Duplicate node found: ${meta.type}:${meta.logicalId}`)
 			}
 		}
 

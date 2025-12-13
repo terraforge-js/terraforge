@@ -1,4 +1,5 @@
 import { App } from '../../app.ts'
+import { getMeta } from '../../node.ts'
 import { WorkSpaceOptions } from '../workspace.ts'
 
 export const hydrate = async (app: App, opt: WorkSpaceOptions) => {
@@ -10,10 +11,11 @@ export const hydrate = async (app: App, opt: WorkSpaceOptions) => {
 
 			if (stackState) {
 				for (const node of stack.nodes) {
-					const nodeState = stackState.nodes[node.$.urn]
+					const meta = getMeta(node)
+					const nodeState = stackState.nodes[meta.urn]
 
 					if (nodeState && nodeState.output) {
-						node.$.resolve(nodeState.output)
+						meta.resolve(nodeState.output)
 					}
 				}
 			}

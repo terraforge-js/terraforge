@@ -21,6 +21,23 @@ declare class Output<T = unknown> extends Future<T> {
 }
 declare const deferredOutput: unknown;
 declare const output: unknown;
+declare const nodeMetaSymbol: unknown;
+type Node<
+	T extends Tag = Tag,
+	I extends State = State,
+	O extends State = any,
+	C extends Config = Config
+> = {
+	[nodeMetaSymbol]: Meta<T, I, O, C>;
+} & O;
+declare const isNode: (obj: object) => obj is {
+	[nodeMetaSymbol]: Meta;
+};
+declare function getMeta(node: Resource): ResourceMeta;
+declare function getMeta(node: DataSource): DataSourceMeta;
+declare function getMeta(node: Node): Meta;
+declare const isResource: (obj: object) => obj is Resource;
+declare const isDataSource: (obj: object) => obj is DataSource;
 type ResourceConfig = Config & {
 	/** Import an existing resource instead of creating a new resource. */
 	import?: string;
@@ -39,7 +56,7 @@ type Resource<
 	I extends State = State,
 	O extends State = State
 > = O & {
-	readonly $: ResourceMeta<I, O>;
+	readonly [nodeMetaSymbol]: ResourceMeta<I, O>;
 };
 type ResourceClass<
 	I extends State = State,
@@ -95,27 +112,12 @@ type DataSource<
 	I extends State = State,
 	O extends State = State
 > = {
-	readonly $: DataSourceMeta<I, O>;
+	readonly [nodeMetaSymbol]: DataSourceMeta<I, O>;
 } & O;
 type DataSourceFunction<
 	I extends State = State,
 	O extends State = State
 > = (parent: Group, id: string, input: I, config?: Config) => DataSource<I, O>;
-type Node<
-	T extends Tag = Tag,
-	I extends State = State,
-	O extends State = State,
-	C extends Config = Config
-> = {
-	$: Meta<T, I, O, C>;
-} & O;
-declare const isNode: (obj: object) => obj is {
-	$: {
-		tag: string;
-	};
-};
-declare const isResource: (obj: object) => obj is Resource;
-declare const isDataSource: (obj: object) => obj is DataSource;
 declare class Group {
 	readonly parent: Group | undefined;
 	readonly type: string;
@@ -328,4 +330,4 @@ type CustomResourceProvider = Partial<{
 	getData?(props: Omit<GetDataProps, "type">): Promise<State>;
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
-export { resolveInputs, output, isResource, isNode, isDataSource, findInputDeps, enableDebug, deferredOutput, createMeta, createDebugger, createCustomResourceClass, createCustomProvider, WorkSpaceOptions, WorkSpace, UpdateProps, URN, Tag, StateBackend, State, Stack, S3StateBackend, ResourceNotFound, ResourceMeta, ResourceError, ResourceConfig, ResourceClass, ResourceAlreadyExists, Resource, Provider, ProcedureOptions, Output, OptionalOutput, OptionalInput, Node, Meta, MemoryStateBackend, MemoryLockBackend, LockBackend, Input, Group, GetProps, GetDataProps, Future, FileStateBackend, FileLockBackend, DynamoLockBackend, DeleteProps, DataSourceMeta, DataSourceFunction, DataSource, CustomResourceProvider, CreateProps, Config, AppError, App };
+export { resolveInputs, output, nodeMetaSymbol, isResource, isNode, isDataSource, getMeta, findInputDeps, enableDebug, deferredOutput, createMeta, createDebugger, createCustomResourceClass, createCustomProvider, WorkSpaceOptions, WorkSpace, UpdateProps, URN, Tag, StateBackend, State, Stack, S3StateBackend, ResourceNotFound, ResourceMeta, ResourceError, ResourceConfig, ResourceClass, ResourceAlreadyExists, Resource, Provider, ProcedureOptions, Output, OptionalOutput, OptionalInput, Node, Meta, MemoryStateBackend, MemoryLockBackend, LockBackend, Input, Group, GetProps, GetDataProps, Future, FileStateBackend, FileLockBackend, DynamoLockBackend, DeleteProps, DataSourceMeta, DataSourceFunction, DataSource, CustomResourceProvider, CreateProps, Config, AppError, App };

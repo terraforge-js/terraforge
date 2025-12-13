@@ -6,7 +6,7 @@ export { Output, output, deferredOutput } from './output.ts'
 export { findInputDeps, resolveInputs } from './input.ts'
 export { Future } from './future.ts'
 export { createMeta } from './meta.ts'
-export { isNode, isResource, isDataSource } from './node.ts'
+export { isNode, isResource, isDataSource, nodeMetaSymbol, getMeta } from './node.ts'
 export { createDebugger, enableDebug } from './debug.ts'
 
 export { WorkSpace } from './workspace/workspace.ts'

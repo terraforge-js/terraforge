@@ -1,6 +1,7 @@
 import { UUID } from 'node:crypto'
 import { createDebugger } from '../../debug.ts'
 import { State } from '../../meta.ts'
+import { getMeta } from '../../node.ts'
 import { findProvider } from '../../provider.ts'
 import { Resource } from '../../resource.ts'
 import { ResourceError } from '../error.ts'
@@ -16,17 +17,18 @@ export const createResource = async (
 	input: State,
 	opt: WorkSpaceOptions
 ): Promise<Omit<NodeState, 'dependencies' | 'lifecycle'>> => {
-	const provider = findProvider(opt.providers, resource.$.provider)
-	const idempotantToken = createIdempotantToken(appToken, resource.$.urn, 'create')
+	const meta = getMeta(resource)
+	const provider = findProvider(opt.providers, meta.provider)
+	const idempotantToken = createIdempotantToken(appToken, meta.urn, 'create')
 
-	debug(resource.$.type)
+	debug(meta.type)
 	debug(input)
 
 	let result
 
 	try {
 		result = await provider.createResource({
-			type: resource.$.type,
+			type: meta.type,
 			state: input,
 			idempotantToken,
 		})
@@ -35,22 +37,22 @@ export const createResource = async (
 		// And restore the state.
 
 		// result = await provider.getResource({
-		// 	type: resource.$.type,
+		// 	type: meta.type,
 		// 	state: input,
 		// })
 
 		// if (!result) {
 		// }
 
-		throw ResourceError.wrap(resource.$.urn, resource.$.type, 'create', error)
+		throw ResourceError.wrap(meta.urn, meta.type, 'create', error)
 	}
 
 	return {
 		tag: 'resource',
 		version: result.version,
-		type: resource.$.type,
-		provider: resource.$.provider,
-		input: resource.$.input,
+		type: meta.type,
+		provider: meta.provider,
+		input: meta.input,
 		output: result.state,
 	}
 }

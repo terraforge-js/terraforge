@@ -2,6 +2,7 @@ import { DataSource } from './data-source.ts'
 import { Group } from './group.ts'
 // import { findInputDeps } from './input.ts'
 import { Config, Meta, State } from './meta.ts'
+import { nodeMetaSymbol } from './node.ts'
 // import { findInputDeps } from './input.ts'
 // import { Output } from './output.ts'
 // import { findParentStack, Stack } from './stack.ts'
@@ -32,7 +33,7 @@ export type ResourceConfig = Config & {
 export type ResourceMeta<I extends State = State, O extends State = State> = Meta<'resource', I, O, ResourceConfig>
 
 export type Resource<I extends State = State, O extends State = State> = O & {
-	readonly $: ResourceMeta<I, O>
+	readonly [nodeMetaSymbol]: ResourceMeta<I, O>
 }
 
 export type ResourceClass<I extends State = State, O extends State = State> = {

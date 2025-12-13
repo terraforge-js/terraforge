@@ -1,5 +1,6 @@
 import { createDebugger } from '../../debug.ts'
 import { State } from '../../meta.ts'
+import { getMeta } from '../../node.ts'
 import { findProvider } from '../../provider.ts'
 import { Resource } from '../../resource.ts'
 import { ResourceError } from '../error.ts'
@@ -13,31 +14,32 @@ export const importResource = async (
 	input: State,
 	opt: WorkSpaceOptions
 ): Promise<Omit<NodeState, 'dependencies' | 'lifecycle'>> => {
-	const provider = findProvider(opt.providers, resource.$.provider)
+	const meta = getMeta(resource)
+	const provider = findProvider(opt.providers, meta.provider)
 
-	debug(resource.$.type)
+	debug(meta.type)
 	debug(input)
 
 	let result
 
 	try {
 		result = await provider.getResource({
-			type: resource.$.type,
+			type: meta.type,
 			state: {
 				...input,
-				id: resource.$.config?.import,
+				id: meta.config?.import,
 			},
 		})
 	} catch (error) {
-		throw ResourceError.wrap(resource.$.urn, resource.$.type, 'import', error)
+		throw ResourceError.wrap(meta.urn, meta.type, 'import', error)
 	}
 
 	return {
 		tag: 'resource',
 		version: result.version,
-		type: resource.$.type,
-		provider: resource.$.provider,
-		input: resource.$.input,
+		type: meta.type,
+		provider: meta.provider,
+		input: meta.input,
 		output: result.state,
 	}
 }

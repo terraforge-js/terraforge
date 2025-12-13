@@ -1,9 +1,7 @@
 ```ts
 
-import { aws } from '@terraforge/aws';
 import { WorkSpace, FileStateBackend, FileLockBackend } from '@terraforge/core';
-
-const awsProvider = await aws.install()
+import { aws } from '@terraforge/aws';
 
 const workspace = new WorkSpace({
 	backend: {
@@ -11,7 +9,7 @@ const workspace = new WorkSpace({
 		lock: new FileLockBackend({ dir }),
 	},
 	providers: [
-		provider({
+		aws({
 			profile: 'jacksclub',
 			region: 'us-east-1',
 		}),

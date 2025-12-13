@@ -1,7 +1,7 @@
 import { App } from '../../app.ts'
 import { createDebugger } from '../../debug.ts'
 import { resolveInputs } from '../../input.ts'
-import { isDataSource, isResource } from '../../node.ts'
+import { getMeta, isDataSource, isResource } from '../../node.ts'
 import { Stack } from '../../stack.ts'
 import { URN } from '../../urn.ts'
 import { concurrencyQueue } from '../concurrency.ts'
@@ -88,11 +88,12 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 		if (stackState) {
 			for (const node of stack.nodes) {
-				const nodeState = stackState.nodes[node.$.urn]
+				const meta = getMeta(node)
+				const nodeState = stackState.nodes[meta.urn]
 				if (nodeState && nodeState.output) {
-					graph.add(node.$.urn, [], async () => {
-						debug('hydrate', node.$.urn)
-						node.$.resolve(nodeState.output)
+					graph.add(meta.urn, [], async () => {
+						debug('hydrate', meta.urn)
+						meta.resolve(nodeState.output)
 					})
 				}
 			}
@@ -148,7 +149,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 		// Delete resources that no longer exist in the stack
 
 		for (const [urn, nodeState] of entries(stackState.nodes)) {
-			const resource = stack.nodes.find(r => r.$.urn === urn)
+			const resource = stack.nodes.find(r => getMeta(r).urn === urn)
 
 			if (!resource) {
 				graph.add(urn, dependentsOn(allNodes, urn), async () => {
@@ -173,30 +174,31 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 		// Create or update resources
 
 		for (const node of stack.nodes) {
-			const dependencies: URN[] = [...node.$.dependencies]
+			const meta = getMeta(node)
+			const dependencies: URN[] = [...meta.dependencies]
 
 			const partialNewResourceState = {
 				dependencies,
 				lifecycle: isResource(node)
 					? {
-							// deleteAfterCreate: node.$.config?.deleteAfterCreate,
-							retainOnDelete: node.$.config?.retainOnDelete,
+							// deleteAfterCreate: meta.config?.deleteAfterCreate,
+							retainOnDelete: getMeta(node).config?.retainOnDelete,
 						}
 					: undefined,
 			}
 
-			graph.add(node.$.urn, dependencies, () => {
+			graph.add(meta.urn, dependencies, () => {
 				return queue(async () => {
-					let nodeState = stackState.nodes[node.$.urn]
+					let nodeState = stackState.nodes[meta.urn]
 
 					let input
 					try {
-						input = await resolveInputs(node.$.input)
+						input = await resolveInputs(meta.input)
 					} catch (error) {
 						throw ResourceError.wrap(
 							//
-							node.$.urn,
-							node.$.type,
+							meta.urn,
+							meta.type,
 							'resolve',
 							error
 						)
@@ -207,16 +209,17 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 					// --------------------------------------------------
 
 					if (isDataSource(node)) {
+						const meta = getMeta(node)
 						if (!nodeState) {
 							// NEW
-							const dataSourceState = await getDataSource(node.$, input, opt)
-							nodeState = stackState.nodes[node.$.urn] = {
+							const dataSourceState = await getDataSource(meta, input, opt)
+							nodeState = stackState.nodes[meta.urn] = {
 								...dataSourceState,
 								...partialNewResourceState,
 							}
 						} else if (!compareState(nodeState.input, input)) {
 							// UPDATE
-							const dataSourceState = await getDataSource(node.$, input, opt)
+							const dataSourceState = await getDataSource(meta, input, opt)
 							Object.assign(nodeState, {
 								...dataSourceState,
 								...partialNewResourceState,
@@ -231,6 +234,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 					// --------------------------------------------------
 
 					if (isResource(node)) {
+						const meta = getMeta(node)
 						// --------------------------------------------------
 						// New resource
 
@@ -238,7 +242,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 							// --------------------------------------------------
 							// Import resource if needed
 
-							if (node.$.config?.import) {
+							if (meta.config?.import) {
 								const importedState = await importResource(node, input, opt)
 								const newResourceState = await updateResource(
 									node,
@@ -248,7 +252,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									opt
 								)
 
-								nodeState = stackState.nodes[node.$.urn] = {
+								nodeState = stackState.nodes[meta.urn] = {
 									...importedState,
 									...newResourceState,
 									...partialNewResourceState,
@@ -264,7 +268,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									opt
 								)
 
-								nodeState = stackState.nodes[node.$.urn] = {
+								nodeState = stackState.nodes[meta.urn] = {
 									...newResourceState,
 									...partialNewResourceState,
 								}
@@ -276,7 +280,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 						) {
 							let newResourceState
 
-							if (requiresReplacement(nodeState.input, input, node.$.config?.replaceOnChanges ?? [])) {
+							if (requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])) {
 								// --------------------------------------------------
 								// Replace resource
 
@@ -314,7 +318,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 					// Hydrate node
 
 					if (nodeState?.output) {
-						node.$.resolve(nodeState.output)
+						meta.resolve(nodeState.output)
 					}
 				})
 			})

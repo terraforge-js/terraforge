@@ -1,4 +1,4 @@
-import { App, Stack } from '../src'
+import { App, getMeta, Stack } from '../src'
 import { createMockWorkSpace, Resource } from './_mock'
 
 describe('state', () => {
@@ -23,9 +23,9 @@ describe('state', () => {
 				[stack.urn]: {
 					name: stack.name,
 					nodes: {
-						[r1.$.urn]: expect.objectContaining({ tag: 'resource' }),
-						[r2.$.urn]: expect.objectContaining({ tag: 'resource' }),
-						[r3.$.urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r1).urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r2).urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r3).urn]: expect.objectContaining({ tag: 'resource' }),
 					},
 				},
 			},
@@ -50,8 +50,8 @@ describe('state', () => {
 				[stack.urn]: {
 					name: stack.name,
 					nodes: {
-						[r1.$.urn]: expect.objectContaining({ tag: 'resource' }),
-						[r3.$.urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r1).urn]: expect.objectContaining({ tag: 'resource' }),
+						[getMeta(r3).urn]: expect.objectContaining({ tag: 'resource' }),
 					},
 				},
 			},

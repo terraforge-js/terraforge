@@ -1,6 +1,8 @@
 import { Group } from '../group'
 import { createMeta, State } from '../meta'
+import { nodeMetaSymbol } from '../node'
 import { Resource, ResourceClass, ResourceConfig } from '../resource'
+import { URN } from '../urn'
 
 export const createCustomResourceClass = <I extends State, O extends State>(
 	providerId: string,
@@ -8,16 +10,20 @@ export const createCustomResourceClass = <I extends State, O extends State>(
 ) => {
 	return new Proxy(class {}, {
 		construct(_, [parent, id, input, config]: [Group, string, State, ResourceConfig]) {
-			const $ = createMeta('resource', `custom:${providerId}`, parent, resourceType, id, input, config)
+			const meta = createMeta('resource', `custom:${providerId}`, parent, resourceType, id, input, config)
 			const node = new Proxy(
-				{ $ },
+				{},
 				{
-					get(_, key: string) {
-						if (key === '$') {
-							return $
+					get(_, key: string | symbol) {
+						if (key === nodeMetaSymbol) {
+							return meta
 						}
 
-						return $.output(data => data[key])
+						if (typeof key === 'symbol') {
+							return
+						}
+
+						return meta.output(data => data[key])
 					},
 				}
 			) as Resource

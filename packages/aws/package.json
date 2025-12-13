@@ -1,6 +1,6 @@
 {
 	"name": "@terraforge/aws",
-	"version": "6.25.0",
+	"version": "6.26.0",
 	"type": "module",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -15,7 +15,7 @@
 		"build": "bunup src/index.ts --format esm --dts --clean --target node --packages external --out-dir ./dist",
 		"prepublishOnly": "bun run typegen; bun run build"
 	},
-	"dependencies": {
+	"peerDependencies": {
 		"@terraforge/terraform": "workspace:*",
 		"@terraforge/core": "workspace:*"
 	},

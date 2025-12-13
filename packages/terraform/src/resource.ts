@@ -1,21 +1,29 @@
 import type { Config, Node, Resource, ResourceConfig, State } from '@terraforge/core'
-import { createMeta, Group } from '@terraforge/core'
+import { createMeta, Group, nodeMetaSymbol } from '@terraforge/core'
 import { snakeCase } from 'change-case'
 
-const createNamespaceProxy = (cb: (key: string) => unknown, target = {}) => {
-	const cache = new Map<string, unknown>()
-	return new Proxy(target, {
-		get(_, key: string) {
-			if (!cache.has(key)) {
-				cache.set(key, cb(key))
-			}
+const createNamespaceProxy = (cb: (key: string) => unknown, scb?: (key: symbol) => unknown) => {
+	const cache = new Map<string | symbol, unknown>()
+	return new Proxy(
+		{},
+		{
+			get(_, key: string | symbol) {
+				if (!cache.has(key)) {
+					const value = typeof key === 'symbol' ? scb?.(key) : cb(key)
+					cache.set(key, value)
+				}
 
-			return cache.get(key)
-		},
-		set(_, key: string) {
-			throw new Error(`Cannot assign to ${key} because it is a read-only property.`)
-		},
-	})
+				return cache.get(key)
+			},
+			set(_, key: string | symbol) {
+				if (typeof key === 'string') {
+					throw new Error(`Cannot set property ${key} on read-only object.`)
+				}
+
+				throw new Error(`This object is read-only.`)
+			},
+		}
+	)
 }
 
 // type Construct = (
@@ -82,16 +90,17 @@ export const createResourceProxy = (name: string) => {
 		resource: (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig) => {
 			const type = snakeCase(name + '_' + ns.join('_'))
 			const provider = `terraform:${name}:${config?.provider ?? 'default'}`
-			const $ = createMeta('resource', provider, parent, type, id, input, config)
+			const meta = createMeta('resource', provider, parent, type, id, input, config)
 			const resource = createNamespaceProxy(
 				key => {
-					if (key === '$') {
-						return $
-					}
-
-					return $.output(data => data[key])
+					return meta.output(data => data[key])
 				},
-				{ $ }
+				key => {
+					if (key === nodeMetaSymbol) {
+						return meta
+					}
+					return
+				}
 			) as Resource
 
 			// $.attach(resource)
@@ -123,20 +132,18 @@ export const createResourceProxy = (name: string) => {
 		dataSource: (ns: string[], parent: Group, id: string, input: State, config?: Config) => {
 			const type = snakeCase(name + '_' + ns.join('_'))
 			const provider = `terraform:${name}:${config?.provider ?? 'default'}`
-
-			// console.log('INPUT', ns, parent, id, input, config)
-
-			const $ = createMeta('data', provider, parent, type, id, input, config)
+			const meta = createMeta('data', provider, parent, type, id, input, config)
 
 			const dataSource = createNamespaceProxy(
 				key => {
-					if (key === '$') {
-						return $
-					}
-
-					return $.output(data => data[key])
+					return meta.output(data => data[key])
 				},
-				{ $ }
+				key => {
+					if (key === nodeMetaSymbol) {
+						return meta
+					}
+					return
+				}
 			) as Node
 
 			parent.add(dataSource)

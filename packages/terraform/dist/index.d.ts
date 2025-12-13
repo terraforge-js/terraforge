@@ -3,6 +3,9 @@ type TerraformProviderConfig = {
 	id?: string;
 	location?: string;
 };
+type InstallProps = {
+	location?: string;
+};
 declare const createTerraformAPI: <T>(props: {
 	namespace: string;
 	provider: {
@@ -68,4 +71,4 @@ declare class TerraformProvider implements Provider {
 	deleteResource({ type, state }: DeleteProps);
 	getData({ type, state }: GetDataProps);
 }
-export { generateTypes, createTerraformAPI, TerraformProviderConfig, TerraformProvider };
+export { generateTypes, createTerraformAPI, TerraformProviderConfig, TerraformProvider, InstallProps };

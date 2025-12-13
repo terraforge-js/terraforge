@@ -1,12 +1,17 @@
 // src/node.ts
+var nodeMetaSymbol = Symbol("metadata");
 var isNode = (obj) => {
-  return "$" in obj && typeof obj.$ === "object" && obj.$ !== null && "tag" in obj.$ && typeof obj.$.tag === "string";
+  const meta = obj[nodeMetaSymbol];
+  return meta && typeof meta === "object" && meta !== null && "tag" in meta && typeof meta.tag === "string";
 };
+function getMeta(node) {
+  return node[nodeMetaSymbol];
+}
 var isResource = (obj) => {
-  return isNode(obj) && obj.$.tag === "resource";
+  return isNode(obj) && obj[nodeMetaSymbol].tag === "resource";
 };
 var isDataSource = (obj) => {
-  return isNode(obj) && obj.$.tag === "data";
+  return isNode(obj) && obj[nodeMetaSymbol].tag === "data";
 };
 
 // src/group.ts
@@ -27,9 +32,10 @@ class Group {
   }
   addChild(child) {
     if (isNode(child)) {
-      const duplicate = this.children.filter((c) => isResource(c)).find((c) => c.$.type === child.$.type && c.$.logicalId === child.$.logicalId);
+      const meta = getMeta(child);
+      const duplicate = this.children.filter((c) => isResource(c)).map((c) => getMeta(c)).find((c) => c.type === meta.type && c.logicalId === meta.logicalId);
       if (duplicate) {
-        throw new Error(`Duplicate node found: ${child.$.type}:${child.$.logicalId}`);
+        throw new Error(`Duplicate node found: ${meta.type}:${meta.logicalId}`);
       }
     }
     if (child instanceof Group) {
@@ -678,26 +684,27 @@ var requiresReplacement = (priorState, proposedState, replaceOnChanges) => {
 // src/workspace/procedure/create-resource.ts
 var debug2 = createDebugger("Create");
 var createResource = async (resource, appToken, input, opt) => {
-  const provider = findProvider(opt.providers, resource.$.provider);
-  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "create");
-  debug2(resource.$.type);
+  const meta = getMeta(resource);
+  const provider = findProvider(opt.providers, meta.provider);
+  const idempotantToken = createIdempotantToken(appToken, meta.urn, "create");
+  debug2(meta.type);
   debug2(input);
   let result;
   try {
     result = await provider.createResource({
-      type: resource.$.type,
+      type: meta.type,
       state: input,
       idempotantToken
     });
   } catch (error) {
-    throw ResourceError.wrap(resource.$.urn, resource.$.type, "create", error);
+    throw ResourceError.wrap(meta.urn, meta.type, "create", error);
   }
   return {
     tag: "resource",
     version: result.version,
-    type: resource.$.type,
-    provider: resource.$.provider,
-    input: resource.$.input,
+    type: meta.type,
+    provider: meta.provider,
+    input: meta.input,
     output: result.state
   };
 };
@@ -731,27 +738,28 @@ var getDataSource = async (dataSource, input, opt) => {
 // src/workspace/procedure/import-resource.ts
 var debug4 = createDebugger("Import");
 var importResource = async (resource, input, opt) => {
-  const provider = findProvider(opt.providers, resource.$.provider);
-  debug4(resource.$.type);
+  const meta = getMeta(resource);
+  const provider = findProvider(opt.providers, meta.provider);
+  debug4(meta.type);
   debug4(input);
   let result;
   try {
     result = await provider.getResource({
-      type: resource.$.type,
+      type: meta.type,
       state: {
         ...input,
-        id: resource.$.config?.import
+        id: meta.config?.import
       }
     });
   } catch (error) {
-    throw ResourceError.wrap(resource.$.urn, resource.$.type, "import", error);
+    throw ResourceError.wrap(meta.urn, meta.type, "import", error);
   }
   return {
     tag: "resource",
     version: result.version,
-    type: resource.$.type,
-    provider: resource.$.provider,
-    input: resource.$.input,
+    type: meta.type,
+    provider: meta.provider,
+    input: meta.input,
     output: result.state
   };
 };
@@ -759,13 +767,14 @@ var importResource = async (resource, input, opt) => {
 // src/workspace/procedure/replace-resource.ts
 var debug5 = createDebugger("Replace");
 var replaceResource = async (resource, appToken, priorState, proposedState, opt) => {
-  const urn = resource.$.urn;
-  const type = resource.$.type;
-  const provider = findProvider(opt.providers, resource.$.provider);
-  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "replace");
-  debug5(resource.$.type);
+  const meta = getMeta(resource);
+  const urn = meta.urn;
+  const type = meta.type;
+  const provider = findProvider(opt.providers, meta.provider);
+  const idempotantToken = createIdempotantToken(appToken, meta.urn, "replace");
+  debug5(meta.type);
   debug5(proposedState);
-  if (resource.$.config?.retainOnDelete) {
+  if (meta.config?.retainOnDelete) {
     debug5("retain", type);
   } else {
     try {
@@ -801,20 +810,21 @@ var replaceResource = async (resource, appToken, priorState, proposedState, opt)
 // src/workspace/procedure/update-resource.ts
 var debug6 = createDebugger("Update");
 var updateResource = async (resource, appToken, priorState, proposedState, opt) => {
-  const provider = findProvider(opt.providers, resource.$.provider);
-  const idempotantToken = createIdempotantToken(appToken, resource.$.urn, "update");
+  const meta = getMeta(resource);
+  const provider = findProvider(opt.providers, meta.provider);
+  const idempotantToken = createIdempotantToken(appToken, meta.urn, "update");
   let result;
-  debug6(resource.$.type);
+  debug6(meta.type);
   debug6(proposedState);
   try {
     result = await provider.updateResource({
-      type: resource.$.type,
+      type: meta.type,
       priorState,
       proposedState,
       idempotantToken
     });
   } catch (error) {
-    throw ResourceError.wrap(resource.$.urn, resource.$.type, "update", error);
+    throw ResourceError.wrap(meta.urn, meta.type, "update", error);
   }
   return {
     version: result.version,
@@ -856,11 +866,12 @@ var deployApp = async (app, opt) => {
     const stackState = appState.stacks[stack.urn];
     if (stackState) {
       for (const node of stack.nodes) {
-        const nodeState = stackState.nodes[node.$.urn];
+        const meta = getMeta(node);
+        const nodeState = stackState.nodes[meta.urn];
         if (nodeState && nodeState.output) {
-          graph.add(node.$.urn, [], async () => {
-            debug7("hydrate", node.$.urn);
-            node.$.resolve(nodeState.output);
+          graph.add(meta.urn, [], async () => {
+            debug7("hydrate", meta.urn);
+            meta.resolve(nodeState.output);
           });
         }
       }
@@ -888,7 +899,7 @@ var deployApp = async (app, opt) => {
       nodes: {}
     };
     for (const [urn, nodeState] of entries(stackState.nodes)) {
-      const resource = stack.nodes.find((r) => r.$.urn === urn);
+      const resource = stack.nodes.find((r) => getMeta(r).urn === urn);
       if (!resource) {
         graph.add(urn, dependentsOn(allNodes, urn), async () => {
           if (nodeState.tag === "resource") {
@@ -899,31 +910,33 @@ var deployApp = async (app, opt) => {
       }
     }
     for (const node of stack.nodes) {
-      const dependencies = [...node.$.dependencies];
+      const meta = getMeta(node);
+      const dependencies = [...meta.dependencies];
       const partialNewResourceState = {
         dependencies,
         lifecycle: isResource(node) ? {
-          retainOnDelete: node.$.config?.retainOnDelete
+          retainOnDelete: getMeta(node).config?.retainOnDelete
         } : undefined
       };
-      graph.add(node.$.urn, dependencies, () => {
+      graph.add(meta.urn, dependencies, () => {
         return queue(async () => {
-          let nodeState = stackState.nodes[node.$.urn];
+          let nodeState = stackState.nodes[meta.urn];
           let input;
           try {
-            input = await resolveInputs(node.$.input);
+            input = await resolveInputs(meta.input);
           } catch (error) {
-            throw ResourceError.wrap(node.$.urn, node.$.type, "resolve", error);
+            throw ResourceError.wrap(meta.urn, meta.type, "resolve", error);
           }
           if (isDataSource(node)) {
+            const meta2 = getMeta(node);
             if (!nodeState) {
-              const dataSourceState = await getDataSource(node.$, input, opt);
-              nodeState = stackState.nodes[node.$.urn] = {
+              const dataSourceState = await getDataSource(meta2, input, opt);
+              nodeState = stackState.nodes[meta2.urn] = {
                 ...dataSourceState,
                 ...partialNewResourceState
               };
             } else if (!compareState(nodeState.input, input)) {
-              const dataSourceState = await getDataSource(node.$, input, opt);
+              const dataSourceState = await getDataSource(meta2, input, opt);
               Object.assign(nodeState, {
                 ...dataSourceState,
                 ...partialNewResourceState
@@ -933,25 +946,26 @@ var deployApp = async (app, opt) => {
             }
           }
           if (isResource(node)) {
+            const meta2 = getMeta(node);
             if (!nodeState) {
-              if (node.$.config?.import) {
+              if (meta2.config?.import) {
                 const importedState = await importResource(node, input, opt);
                 const newResourceState = await updateResource(node, appState.idempotentToken, importedState.output, input, opt);
-                nodeState = stackState.nodes[node.$.urn] = {
+                nodeState = stackState.nodes[meta2.urn] = {
                   ...importedState,
                   ...newResourceState,
                   ...partialNewResourceState
                 };
               } else {
                 const newResourceState = await createResource(node, appState.idempotentToken, input, opt);
-                nodeState = stackState.nodes[node.$.urn] = {
+                nodeState = stackState.nodes[meta2.urn] = {
                   ...newResourceState,
                   ...partialNewResourceState
                 };
               }
             } else if (!compareState(nodeState.input, input)) {
               let newResourceState;
-              if (requiresReplacement(nodeState.input, input, node.$.config?.replaceOnChanges ?? [])) {
+              if (requiresReplacement(nodeState.input, input, meta2.config?.replaceOnChanges ?? [])) {
                 newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.output, input, opt);
               } else {
                 newResourceState = await updateResource(node, appState.idempotentToken, nodeState.output, input, opt);
@@ -966,7 +980,7 @@ var deployApp = async (app, opt) => {
             }
           }
           if (nodeState?.output) {
-            node.$.resolve(nodeState.output);
+            meta.resolve(nodeState.output);
           }
         });
       });
@@ -995,9 +1009,10 @@ var hydrate = async (app, opt) => {
       const stackState = appState.stacks[stack.urn];
       if (stackState) {
         for (const node of stack.nodes) {
-          const nodeState = stackState.nodes[node.$.urn];
+          const meta = getMeta(node);
+          const nodeState = stackState.nodes[meta.urn];
           if (nodeState && nodeState.output) {
-            node.$.resolve(nodeState.output);
+            meta.resolve(nodeState.output);
           }
         }
       }
@@ -1285,13 +1300,16 @@ var createCustomResourceClass = (providerId, resourceType) => {
   return new Proxy(class {
   }, {
     construct(_, [parent, id, input, config]) {
-      const $ = createMeta("resource", `custom:${providerId}`, parent, resourceType, id, input, config);
-      const node = new Proxy({ $ }, {
+      const meta = createMeta("resource", `custom:${providerId}`, parent, resourceType, id, input, config);
+      const node = new Proxy({}, {
         get(_2, key) {
-          if (key === "$") {
-            return $;
+          if (key === nodeMetaSymbol) {
+            return meta;
           }
-          return $.output((data) => data[key]);
+          if (typeof key === "symbol") {
+            return;
+          }
+          return meta.output((data) => data[key]);
         }
       });
       parent.add(node);
@@ -1366,9 +1384,11 @@ var createCustomProvider = (providerId, resourceProviders) => {
 export {
   resolveInputs,
   output,
+  nodeMetaSymbol,
   isResource,
   isNode,
   isDataSource,
+  getMeta,
   findInputDeps,
   enableDebug,
   deferredOutput,

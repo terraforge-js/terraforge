@@ -1546,19 +1546,23 @@ class TerraformProvider {
 }
 
 // src/resource.ts
-import { createMeta } from "@terraforge/core";
+import { createMeta, nodeMetaSymbol } from "@terraforge/core";
 import { snakeCase as snakeCase2 } from "change-case";
-var createNamespaceProxy = (cb, target = {}) => {
+var createNamespaceProxy = (cb, scb) => {
   const cache = new Map;
-  return new Proxy(target, {
+  return new Proxy({}, {
     get(_, key) {
       if (!cache.has(key)) {
-        cache.set(key, cb(key));
+        const value = typeof key === "symbol" ? scb?.(key) : cb(key);
+        cache.set(key, value);
       }
       return cache.get(key);
     },
     set(_, key) {
-      throw new Error(`Cannot assign to ${key} because it is a read-only property.`);
+      if (typeof key === "string") {
+        throw new Error(`Cannot set property ${key} on read-only object.`);
+      }
+      throw new Error(`This object is read-only.`);
     }
   });
 };
@@ -1607,26 +1611,30 @@ var createResourceProxy = (name) => {
     resource: (ns, parent, id, input, config) => {
       const type = snakeCase2(name + "_" + ns.join("_"));
       const provider = `terraform:${name}:${config?.provider ?? "default"}`;
-      const $ = createMeta("resource", provider, parent, type, id, input, config);
+      const meta = createMeta("resource", provider, parent, type, id, input, config);
       const resource = createNamespaceProxy((key) => {
-        if (key === "$") {
-          return $;
+        return meta.output((data) => data[key]);
+      }, (key) => {
+        if (key === nodeMetaSymbol) {
+          return meta;
         }
-        return $.output((data) => data[key]);
-      }, { $ });
+        return;
+      });
       parent.add(resource);
       return resource;
     },
     dataSource: (ns, parent, id, input, config) => {
       const type = snakeCase2(name + "_" + ns.join("_"));
       const provider = `terraform:${name}:${config?.provider ?? "default"}`;
-      const $ = createMeta("data", provider, parent, type, id, input, config);
+      const meta = createMeta("data", provider, parent, type, id, input, config);
       const dataSource = createNamespaceProxy((key) => {
-        if (key === "$") {
-          return $;
+        return meta.output((data) => data[key]);
+      }, (key) => {
+        if (key === nodeMetaSymbol) {
+          return meta;
         }
-        return $.output((data) => data[key]);
-      }, { $ });
+        return;
+      });
       parent.add(dataSource);
       return dataSource;
     }

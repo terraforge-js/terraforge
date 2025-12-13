@@ -1,6 +1,7 @@
 import { UUID } from 'node:crypto'
 import { createDebugger } from '../../debug.ts'
 import { State } from '../../meta.ts'
+import { getMeta } from '../../node.ts'
 import { findProvider } from '../../provider.ts'
 import { Resource } from '../../resource.ts'
 import { ResourceError, ResourceNotFound } from '../error.ts'
@@ -19,15 +20,16 @@ export const replaceResource = async (
 	output: State
 	version?: number
 }> => {
-	const urn = resource.$.urn
-	const type = resource.$.type
-	const provider = findProvider(opt.providers, resource.$.provider)
-	const idempotantToken = createIdempotantToken(appToken, resource.$.urn, 'replace')
+	const meta = getMeta(resource)
+	const urn = meta.urn
+	const type = meta.type
+	const provider = findProvider(opt.providers, meta.provider)
+	const idempotantToken = createIdempotantToken(appToken, meta.urn, 'replace')
 
-	debug(resource.$.type)
+	debug(meta.type)
 	debug(proposedState)
 
-	if (resource.$.config?.retainOnDelete) {
+	if (meta.config?.retainOnDelete) {
 		debug('retain', type)
 	} else {
 		try {

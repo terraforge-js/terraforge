@@ -7,9 +7,6 @@ The core of Terraforge lives in `@terraforge/core`, with the Terraform bridge in
 
 The most used IaC solutions are slow & don't effectively leverage diffing to speed up their deployments.
 
-## Todo's
-- When a resource is being deleted inside a deployment we need to make sure that resources that depends on our deleted resource will be updated first.
-
 ## Setup
 
 Install with (NPM):

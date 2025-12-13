@@ -1,6 +1,7 @@
 import { UUID } from 'node:crypto'
 import { createDebugger } from '../../debug.ts'
 import { State } from '../../meta.ts'
+import { getMeta } from '../../node.ts'
 import { findProvider } from '../../provider.ts'
 import { Resource } from '../../resource.ts'
 import { ResourceError } from '../error.ts'
@@ -19,23 +20,24 @@ export const updateResource = async (
 	output: State
 	version?: number
 }> => {
-	const provider = findProvider(opt.providers, resource.$.provider)
-	const idempotantToken = createIdempotantToken(appToken, resource.$.urn, 'update')
+	const meta = getMeta(resource)
+	const provider = findProvider(opt.providers, meta.provider)
+	const idempotantToken = createIdempotantToken(appToken, meta.urn, 'update')
 
 	let result
 
-	debug(resource.$.type)
+	debug(meta.type)
 	debug(proposedState)
 
 	try {
 		result = await provider.updateResource({
-			type: resource.$.type,
+			type: meta.type,
 			priorState,
 			proposedState,
 			idempotantToken,
 		})
 	} catch (error) {
-		throw ResourceError.wrap(resource.$.urn, resource.$.type, 'update', error)
+		throw ResourceError.wrap(meta.urn, meta.type, 'update', error)
 
 		// If the resource wasn't found for some reason we try to create it.
 		// if (error instanceof ResourceNotFound) {

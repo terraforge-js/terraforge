@@ -3,12 +3,13 @@
 // import { findInputDeps } from './input.ts'
 import { Group } from './group.ts'
 import { Config, Meta, State } from './meta.ts'
+import { nodeMetaSymbol } from './node.ts'
 // import { Output } from './output.ts'
 
 export type DataSourceMeta<I extends State = State, O extends State = State> = Meta<'data', I, O>
 
 export type DataSource<I extends State = State, O extends State = State> = {
-	readonly $: DataSourceMeta<I, O>
+	readonly [nodeMetaSymbol]: DataSourceMeta<I, O>
 } & O
 
 export type DataSourceFunction<I extends State = State, O extends State = State> = (
