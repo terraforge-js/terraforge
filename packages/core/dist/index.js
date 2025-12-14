@@ -382,7 +382,7 @@ var lockApp = async (lockBackend, app, fn) => {
 
 // src/workspace/concurrency.ts
 import promiseLimit from "p-limit";
-var concurrencyQueue = (concurrency) => {
+var createConcurrencyQueue = (concurrency) => {
   const queue = promiseLimit(concurrency);
   return (cb) => {
     return queue(cb);
@@ -631,7 +631,7 @@ var deleteApp = async (app, opt) => {
   if (opt.filters && opt.filters.length > 0) {
     stackStates = stackStates.filter((stackState) => opt.filters.includes(stackState.name));
   }
-  const queue = concurrencyQueue(opt.concurrency ?? 10);
+  const queue = createConcurrencyQueue(opt.concurrency ?? 10);
   const graph = new DependencyGraph;
   const allNodes = {};
   for (const stackState of Object.values(appState.stacks)) {
@@ -854,7 +854,7 @@ var deployApp = async (app, opt) => {
     stacks = app.stacks.filter((stack) => opt.filters.includes(stack.name));
     filteredOutStacks = app.stacks.filter((stack) => !opt.filters.includes(stack.name));
   }
-  const queue = concurrencyQueue(opt.concurrency ?? 10);
+  const queue = createConcurrencyQueue(opt.concurrency ?? 10);
   const graph = new DependencyGraph;
   const allNodes = {};
   for (const stackState of Object.values(appState.stacks)) {
@@ -1020,6 +1020,41 @@ var hydrate = async (app, opt) => {
   }
 };
 
+// src/workspace/procedure/refresh.ts
+var refresh = async (app, opt) => {
+  const appState = await opt.backend.state.get(app.urn);
+  const queue = createConcurrencyQueue(opt.concurrency ?? 10);
+  if (appState) {
+    await Promise.all(Object.values(appState.stacks).map((stackState) => {
+      return Promise.all(Object.values(stackState.nodes).map((nodeState) => {
+        return queue(async () => {
+          const provider = findProvider(opt.providers, nodeState.provider);
+          if (nodeState.tag === "data") {
+            const result = await provider.getData?.({
+              type: nodeState.type,
+              state: nodeState.output
+            });
+            if (result && !compareState(result.state, nodeState.output)) {
+              nodeState.output = result.state;
+              nodeState.input = result.state;
+            }
+          } else if (nodeState.tag === "resource") {
+            const result = await provider.getResource({
+              type: nodeState.type,
+              state: nodeState.output
+            });
+            if (result && !compareState(result.state, nodeState.output)) {
+              nodeState.output = result.state;
+              nodeState.input = result.state;
+            }
+          }
+        });
+      }));
+    }));
+    await opt.backend.state.update(app.urn, appState);
+  }
+};
+
 // src/workspace/workspace.ts
 class WorkSpace {
   props;
@@ -1046,6 +1081,15 @@ class WorkSpace {
   }
   hydrate(app) {
     return hydrate(app, this.props);
+  }
+  refresh(app) {
+    return lockApp(this.props.backend.lock, app, async () => {
+      try {
+        await refresh(app, this.props);
+      } finally {
+        await this.destroyProviders();
+      }
+    });
   }
   async destroyProviders() {
     await Promise.all(this.props.providers.map((p) => {
@@ -1305,6 +1349,9 @@ var createCustomResourceClass = (providerId, resourceType) => {
         get(_2, key) {
           if (key === nodeMetaSymbol) {
             return meta;
+          }
+          if (key === "urn") {
+            return meta.urn;
           }
           if (typeof key === "symbol") {
             return;

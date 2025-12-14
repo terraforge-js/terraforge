@@ -1,12 +1,12 @@
 import { App } from '../../app.ts'
 import { findProvider } from '../../provider.ts'
-import { concurrencyQueue } from '../concurrency.ts'
+import { createConcurrencyQueue } from '../concurrency.ts'
 import { compareState } from '../state.ts'
 import { WorkSpaceOptions } from '../workspace.ts'
 
 export const refresh = async (app: App, opt: WorkSpaceOptions) => {
 	const appState = await opt.backend.state.get(app.urn)
-	const queue = concurrencyQueue(opt.concurrency ?? 10)
+	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 
 	if (appState) {
 		await Promise.all(

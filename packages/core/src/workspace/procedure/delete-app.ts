@@ -1,6 +1,6 @@
 import { App } from '../../app.ts'
 import { URN } from '../../urn.ts'
-import { concurrencyQueue } from '../concurrency.ts'
+import { createConcurrencyQueue } from '../concurrency.ts'
 import { DependencyGraph, dependentsOn } from '../dependency.ts'
 import { entries } from '../entries.ts'
 import { AppError } from '../error.ts'
@@ -33,7 +33,6 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	// -------------------------------------------------------
 	// Filter stacks
 
-	// let stacks = entries(appState.stacks)
 	let stackStates = Object.values(appState.stacks)
 
 	if (opt.filters && opt.filters.length > 0) {
@@ -42,7 +41,7 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 	// -------------------------------------------------------
 
-	const queue = concurrencyQueue(opt.concurrency ?? 10)
+	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 	const graph = new DependencyGraph()
 
 	// -------------------------------------------------------

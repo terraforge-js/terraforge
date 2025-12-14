@@ -50,8 +50,8 @@ describe('state', () => {
 				[stack.urn]: {
 					name: stack.name,
 					nodes: {
-						[getMeta(r1).urn]: expect.objectContaining({ tag: 'resource' }),
-						[getMeta(r3).urn]: expect.objectContaining({ tag: 'resource' }),
+						[r1.urn]: expect.objectContaining({ tag: 'resource' }),
+						[r3.urn]: expect.objectContaining({ tag: 'resource' }),
 					},
 				},
 			},

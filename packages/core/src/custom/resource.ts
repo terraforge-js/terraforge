@@ -2,7 +2,6 @@ import { Group } from '../group'
 import { createMeta, State } from '../meta'
 import { nodeMetaSymbol } from '../node'
 import { Resource, ResourceClass, ResourceConfig } from '../resource'
-import { URN } from '../urn'
 
 export const createCustomResourceClass = <I extends State, O extends State>(
 	providerId: string,
@@ -17,6 +16,10 @@ export const createCustomResourceClass = <I extends State, O extends State>(
 					get(_, key: string | symbol) {
 						if (key === nodeMetaSymbol) {
 							return meta
+						}
+
+						if (key === 'urn') {
+							return meta.urn
 						}
 
 						if (typeof key === 'symbol') {

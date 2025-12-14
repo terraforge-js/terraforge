@@ -3,6 +3,7 @@ import { Group } from './group.ts'
 // import { findInputDeps } from './input.ts'
 import { Config, Meta, State } from './meta.ts'
 import { nodeMetaSymbol } from './node.ts'
+import { URN } from './urn.ts'
 // import { findInputDeps } from './input.ts'
 // import { Output } from './output.ts'
 // import { findParentStack, Stack } from './stack.ts'
@@ -34,6 +35,7 @@ export type ResourceMeta<I extends State = State, O extends State = State> = Met
 
 export type Resource<I extends State = State, O extends State = State> = O & {
 	readonly [nodeMetaSymbol]: ResourceMeta<I, O>
+	readonly urn: URN
 }
 
 export type ResourceClass<I extends State = State, O extends State = State> = {

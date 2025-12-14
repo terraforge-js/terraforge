@@ -21,6 +21,7 @@ declare class Output<T = unknown> extends Future<T> {
 }
 declare const deferredOutput: unknown;
 declare const output: unknown;
+type URN = `urn:${string}`;
 declare const nodeMetaSymbol: unknown;
 type Node<
 	T extends Tag = Tag,
@@ -28,7 +29,8 @@ type Node<
 	O extends State = any,
 	C extends Config = Config
 > = {
-	[nodeMetaSymbol]: Meta<T, I, O, C>;
+	readonly [nodeMetaSymbol]: Meta<T, I, O, C>;
+	readonly urn: URN;
 } & O;
 declare const isNode: (obj: object) => obj is {
 	[nodeMetaSymbol]: Meta;
@@ -57,6 +59,7 @@ type Resource<
 	O extends State = State
 > = O & {
 	readonly [nodeMetaSymbol]: ResourceMeta<I, O>;
+	readonly urn: URN;
 };
 type ResourceClass<
 	I extends State = State,
@@ -71,7 +74,6 @@ declare class Stack extends Group {
 	constructor(app: App, name: string);
 	dependsOn(...stacks: Stack[]);
 }
-type URN = `urn:${string}`;
 type Tag = "resource" | "data";
 type State = Record<string, unknown>;
 type Config = {
@@ -232,9 +234,22 @@ type WorkSpaceOptions = {
 declare class WorkSpace {
 	protected props: WorkSpaceOptions;
 	constructor(props: WorkSpaceOptions);
+	/**
+	* Deploy the entire app or use the filter option to deploy specific stacks inside your app.
+	*/
 	deploy(app: App, options?: ProcedureOptions);
+	/**
+	* Delete the entire app or use the filter option to delete specific stacks inside your app.
+	*/
 	delete(app: App, options?: ProcedureOptions);
+	/**
+	* Hydrate the outputs of the resources & data-sources inside your app.
+	*/
 	hydrate(app: App);
+	/**
+	* Refresh the state of the resources & data-sources inside your app.
+	*/
+	refresh(app: App);
 	protected destroyProviders();
 }
 type ResourceOperation = "create" | "update" | "delete" | "replace" | "import" | "resolve" | "get";

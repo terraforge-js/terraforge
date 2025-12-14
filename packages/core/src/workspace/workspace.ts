@@ -8,6 +8,7 @@ import { lockApp } from './lock.ts'
 import { deleteApp } from './procedure/delete-app.ts'
 import { deployApp } from './procedure/deploy-app.ts'
 import { hydrate } from './procedure/hydrate.ts'
+import { refresh } from './procedure/refresh.ts'
 
 export type ProcedureOptions = {
 	filters?: string[]
@@ -26,10 +27,11 @@ export type WorkSpaceOptions = {
 export class WorkSpace {
 	constructor(protected props: WorkSpaceOptions) {}
 
+	/**
+	 * Deploy the entire app or use the filter option to deploy specific stacks inside your app.
+	 */
 	deploy(app: App, options: ProcedureOptions = {}) {
 		return lockApp(this.props.backend.lock, app, async () => {
-			// this.resolveDeps(app)
-
 			try {
 				await deployApp(app, { ...this.props, ...options })
 			} finally {
@@ -38,10 +40,11 @@ export class WorkSpace {
 		})
 	}
 
+	/**
+	 * Delete the entire app or use the filter option to delete specific stacks inside your app.
+	 */
 	delete(app: App, options: ProcedureOptions = {}) {
 		return lockApp(this.props.backend.lock, app, async () => {
-			// this.resolveDeps(app)
-
 			try {
 				await deleteApp(app, { ...this.props, ...options })
 			} finally {
@@ -50,42 +53,25 @@ export class WorkSpace {
 		})
 	}
 
+	/**
+	 * Hydrate the outputs of the resources & data-sources inside your app.
+	 */
 	hydrate(app: App) {
 		return hydrate(app, this.props)
 	}
 
-	// protected resolveDeps(app: App) {
-	// 	// ------------------------------------------------------------------------------
-	// 	// Link the input dependencies to our resource if they are in the same stack.
-	// 	// If the resource is coming from a different stack we will let our stack depend
-	// 	// ------------------------------------------------------------------------------
-
-	// 	for (const resource of app.resources) {
-	// 		const deps = findInputDeps(resource.$.input)
-
-	// 		for (const dep of deps) {
-	// 			if (dep.tag === 'resource') {
-	// 				if (dep.stack.urn === resource.$.stack.urn) {
-	// 					resource.$.dependencies.add(dep.urn)
-	// 				} else {
-	// 					resource.$.stack.dependsOn(dep.stack)
-	// 				}
-	// 			} else {
-	// 				resource.$.dataSourceMetas.add(dep)
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	//   refresh(app: App) {
-	//     return lockApp(this.props.backend.lock, app, async () => {
-	//       try {
-	//         await refresh(app, this.props);
-	//       } finally {
-	//         await this.destroyProviders();
-	//       }
-	//     });
-	//   }
+	/**
+	 * Refresh the state of the resources & data-sources inside your app.
+	 */
+	refresh(app: App) {
+		return lockApp(this.props.backend.lock, app, async () => {
+			try {
+				await refresh(app, this.props)
+			} finally {
+				await this.destroyProviders()
+			}
+		})
+	}
 
 	protected async destroyProviders() {
 		await Promise.all(

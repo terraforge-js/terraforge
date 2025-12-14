@@ -4,7 +4,7 @@ import { resolveInputs } from '../../input.ts'
 import { getMeta, isDataSource, isResource } from '../../node.ts'
 import { Stack } from '../../stack.ts'
 import { URN } from '../../urn.ts'
-import { concurrencyQueue } from '../concurrency.ts'
+import { createConcurrencyQueue } from '../concurrency.ts'
 import { DependencyGraph, dependentsOn } from '../dependency.ts'
 import { entries } from '../entries.ts'
 import { AppError, ResourceError } from '../error.ts'
@@ -67,7 +67,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	// -------------------------------------------------------
 	// Build deployment graph
 
-	const queue = concurrencyQueue(opt.concurrency ?? 10)
+	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 	const graph = new DependencyGraph()
 
 	// -------------------------------------------------------
