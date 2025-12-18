@@ -17,7 +17,7 @@ export const generateTypes = (
 		generateInstallFunction(providers),
 		generateNamespace(providers, (name, prop, indent) => {
 			const typeName = name.toLowerCase()
-			return `${tab(indent)}export function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`
+			return `${tab(indent)}export declare function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`
 		}),
 		generateNamespace(resources, (name, prop, indent) => {
 			const typeName = pascalCase(name)
@@ -31,7 +31,7 @@ export const generateTypes = (
 				`${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
 				`${tab(indent)}export class ${typeName} {`,
 				`${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
-				`${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
+				// `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
 				generateClassProperties(prop, indent + 1),
 				`${tab(indent)}}`,
 			].join('\n\n')
@@ -56,7 +56,7 @@ const generateImport = (name: string, from: string) => {
 const generateInstallFunction = (resources: Record<string, Property>) => {
 	return generateNamespace(resources, (name, _prop, indent) => {
 		const typeName = name.toLowerCase()
-		return `${tab(indent)}export namespace ${typeName} { export function install(props?: t.InstallProps): Promise<void> }`
+		return `${tab(indent)}export declare namespace ${typeName} { export function install(props?: t.InstallProps): Promise<void> }`
 	})
 }
 
@@ -193,6 +193,9 @@ const generateNamespace = (
 		}
 
 		// console.log(name)
+		if (typeof group === 'string') {
+			return render(name, resources[group]!, indent)
+		}
 
 		return [
 			`${tab(indent)}export ${indent === 0 ? 'declare ' : ''}namespace ${name.toLowerCase()} {`,
@@ -217,7 +220,13 @@ const generateNamespace = (
 
 	// return code.join('\n')
 
-	return renderNamespace('root', grouped, 0)
+	// return renderNamespace('root', grouped, 0)
+	// console.log(grouped)
+
+	return Object.entries(grouped).map(([name, entry]) => {
+		// console.log(name, entry)
+		return renderNamespace(name, entry, 0)
+	})
 }
 
 type Context = {

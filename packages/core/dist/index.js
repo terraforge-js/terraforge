@@ -1,5 +1,5 @@
 // src/node.ts
-var nodeMetaSymbol = Symbol("metadata");
+var nodeMetaSymbol = /* @__PURE__ */ Symbol("metadata");
 var isNode = (obj) => {
   const meta = obj[nodeMetaSymbol];
   return meta && typeof meta === "object" && meta !== null && "tag" in meta && typeof meta.tag === "string";
@@ -15,17 +15,14 @@ var isDataSource = (obj) => {
 };
 
 // src/group.ts
-class Group {
-  parent;
-  type;
-  name;
-  children = [];
+var Group = class _Group {
   constructor(parent, type, name) {
     this.parent = parent;
     this.type = type;
     this.name = name;
     parent?.children.push(this);
   }
+  children = [];
   get urn() {
     const urn = this.parent ? this.parent.urn : "urn";
     return `${urn}:${this.type}:{${this.name}}`;
@@ -38,8 +35,8 @@ class Group {
         throw new Error(`Duplicate node found: ${meta.type}:${meta.logicalId}`);
       }
     }
-    if (child instanceof Group) {
-      const duplicate = this.children.filter((c) => c instanceof Group).find((c) => c.type === child.type && c.name === child.name);
+    if (child instanceof _Group) {
+      const duplicate = this.children.filter((c) => c instanceof _Group).find((c) => c.type === child.type && c.name === child.name);
       if (duplicate) {
         throw new Error(`Duplicate group found: ${child.type}:${child.name}`);
       }
@@ -53,7 +50,7 @@ class Group {
   }
   get nodes() {
     return this.children.map((child) => {
-      if (child instanceof Group) {
+      if (child instanceof _Group) {
         return child.nodes;
       }
       if (isNode(child)) {
@@ -68,16 +65,15 @@ class Group {
   get dataSources() {
     return this.nodes.filter((node) => isDataSource(node));
   }
-}
+};
 
 // src/stack.ts
-class Stack extends Group {
-  app;
-  dependencies = new Set;
+var Stack = class extends Group {
   constructor(app, name) {
     super(app, "stack", name);
     this.app = app;
   }
+  dependencies = /* @__PURE__ */ new Set();
   dependsOn(...stacks) {
     for (const stack of stacks) {
       if (stack.app !== this.app) {
@@ -87,7 +83,7 @@ class Stack extends Group {
     }
     return this;
   }
-}
+};
 var findParentStack = (group) => {
   if (group instanceof Stack) {
     return group;
@@ -99,31 +95,29 @@ var findParentStack = (group) => {
 };
 
 // src/app.ts
-class App extends Group {
-  name;
+var App = class extends Group {
   constructor(name) {
-    super(undefined, "app", name);
+    super(void 0, "app", name);
     this.name = name;
   }
   get stacks() {
     return this.children.filter((child) => child instanceof Stack);
   }
-}
+};
+
 // src/future.ts
 var IDLE = 0;
 var PENDING = 1;
 var RESOLVED = 2;
 var REJECTED = 3;
-
-class Future {
-  callback;
-  listeners = new Set;
-  status = IDLE;
-  data;
-  error;
+var Future = class _Future {
   constructor(callback) {
     this.callback = callback;
   }
+  listeners = /* @__PURE__ */ new Set();
+  status = IDLE;
+  data;
+  error;
   get [Symbol.toStringTag]() {
     switch (this.status) {
       case IDLE:
@@ -137,42 +131,45 @@ class Future {
     }
   }
   pipe(cb) {
-    return new Future((resolve, reject) => {
+    return new _Future((resolve2, reject) => {
       this.then((value) => {
         Promise.resolve(cb(value)).then((value2) => {
-          resolve(value2);
+          resolve2(value2);
         }).catch(reject);
       }, reject);
     });
   }
-  then(resolve, reject) {
+  then(resolve2, reject) {
     if (this.status === RESOLVED) {
-      resolve(this.data);
+      resolve2(this.data);
     } else if (this.status === REJECTED) {
       reject?.(this.error);
     } else {
-      this.listeners.add({ resolve, reject });
+      this.listeners.add({ resolve: resolve2, reject });
       if (this.status === IDLE) {
         this.status = PENDING;
-        this.callback((data) => {
-          if (this.status === PENDING) {
-            this.status = RESOLVED;
-            this.data = data;
-            this.listeners.forEach(({ resolve: resolve2 }) => resolve2(data));
-            this.listeners.clear();
+        this.callback(
+          (data) => {
+            if (this.status === PENDING) {
+              this.status = RESOLVED;
+              this.data = data;
+              this.listeners.forEach(({ resolve: resolve3 }) => resolve3(data));
+              this.listeners.clear();
+            }
+          },
+          (error) => {
+            if (this.status === PENDING) {
+              this.status = REJECTED;
+              this.error = error;
+              this.listeners.forEach(({ reject: reject2 }) => reject2?.(error));
+              this.listeners.clear();
+            }
           }
-        }, (error) => {
-          if (this.status === PENDING) {
-            this.status = REJECTED;
-            this.error = error;
-            this.listeners.forEach(({ reject: reject2 }) => reject2?.(error));
-            this.listeners.clear();
-          }
-        });
+        );
       }
     }
   }
-}
+};
 
 // src/input.ts
 var findInputDeps = (props) => {
@@ -201,26 +198,32 @@ var resolveInputs = async (inputs) => {
     }
   };
   find(inputs, {}, "root");
-  const responses = await Promise.all(unresolved.map(async ([obj, key]) => {
-    const promise = obj[key];
-    let timeout;
-    const response = await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timeout = setTimeout(() => {
-          if (promise instanceof Output) {
-            reject(new Error(`Resolving Output<${[...promise.dependencies].map((d) => d.urn).join(", ")}> took too long.`));
-          } else if (promise instanceof Future) {
-            reject(new Error("Resolving Future took too long."));
-          } else {
-            reject(new Error("Resolving Promise took too long."));
-          }
-        }, 3000);
-      })
-    ]);
-    clearTimeout(timeout);
-    return response;
-  }));
+  const responses = await Promise.all(
+    unresolved.map(async ([obj, key]) => {
+      const promise = obj[key];
+      let timeout;
+      const response = await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => {
+            if (promise instanceof Output) {
+              reject(
+                new Error(
+                  `Resolving Output<${[...promise.dependencies].map((d) => d.urn).join(", ")}> took too long.`
+                )
+              );
+            } else if (promise instanceof Future) {
+              reject(new Error("Resolving Future took too long."));
+            } else {
+              reject(new Error("Resolving Promise took too long."));
+            }
+          }, 3e3);
+        })
+      ]);
+      clearTimeout(timeout);
+      return response;
+    })
+  );
   unresolved.forEach(([props, key], i) => {
     props[key] = responses[i];
   });
@@ -228,33 +231,32 @@ var resolveInputs = async (inputs) => {
 };
 
 // src/output.ts
-class Output extends Future {
-  dependencies;
+var Output = class _Output extends Future {
   constructor(dependencies, callback) {
     super(callback);
     this.dependencies = dependencies;
   }
   pipe(cb) {
-    return new Output(this.dependencies, (resolve, reject) => {
+    return new _Output(this.dependencies, (resolve2, reject) => {
       this.then((value) => {
         Promise.resolve(cb(value)).then((value2) => {
-          resolve(value2);
+          resolve2(value2);
         }).catch(reject);
       }, reject);
     });
   }
-}
+};
 var deferredOutput = (cb) => {
-  return new Output(new Set, cb);
+  return new Output(/* @__PURE__ */ new Set(), cb);
 };
 var output = (value) => {
-  return deferredOutput((resolve) => resolve(value));
+  return deferredOutput((resolve2) => resolve2(value));
 };
 var combine = (...inputs) => {
   const deps = new Set(findInputDeps(inputs));
-  return new Output(deps, (resolve, reject) => {
+  return new Output(deps, (resolve2, reject) => {
     Promise.all(inputs).then((result) => {
-      resolve(result);
+      resolve2(result);
     }, reject);
   });
 };
@@ -266,13 +268,14 @@ var resolve = (inputs, transformer) => {
 var interpolate = (literals, ...placeholders) => {
   return combine(...placeholders).pipe((unwrapped) => {
     const result = [];
-    for (let i = 0;i < unwrapped.length; i++) {
+    for (let i = 0; i < unwrapped.length; i++) {
       result.push(literals[i], unwrapped[i]);
     }
     result.push(literals.at(-1));
     return result.join("");
   });
 };
+
 // src/urn.ts
 var createUrn = (tag, type, name, parentUrn) => {
   return `${parentUrn ? parentUrn : "urn"}:${tag}:${type}:{${name}}`;
@@ -293,7 +296,7 @@ var createMeta = (tag, provider, parent, type, logicalId, input, config) => {
     input,
     config,
     get dependencies() {
-      const dependencies = new Set;
+      const dependencies = /* @__PURE__ */ new Set();
       const linkMetaDep = (dep) => {
         if (dep.urn === urn) {
           throw new Error("You can't depend on yourself");
@@ -308,11 +311,20 @@ var createMeta = (tag, provider, parent, type, logicalId, input, config) => {
       }
       return dependencies;
     },
+    // attach(value) {
+    // 	resource = value
+    // },
+    // dependOn(...resources: Resource[]) {},
+    // attachDependencies(props) {
+    // 	for (const dep of findInputDeps(props)) {
+    // 		linkMetaDep(dep)
+    // 	}
+    // },
     resolve(data) {
       output2 = data;
     },
     output(cb) {
-      return new Output(new Set([this]), (resolve2) => {
+      return new Output(/* @__PURE__ */ new Set([this]), (resolve2) => {
         if (!output2) {
           throw new Error(`Unresolved output for ${tag}: ${urn}`);
         }
@@ -321,6 +333,7 @@ var createMeta = (tag, provider, parent, type, logicalId, input, config) => {
     }
   };
 };
+
 // src/debug.ts
 var enabled = false;
 var enableDebug = () => {
@@ -336,9 +349,10 @@ var createDebugger = (group) => {
     console.log();
   };
 };
+
 // src/workspace/exit.ts
 import asyncOnExit from "async-on-exit";
-var listeners = new Set;
+var listeners = /* @__PURE__ */ new Set();
 var listening = false;
 var onExit = (cb) => {
   listeners.add(cb);
@@ -399,9 +413,9 @@ var entries = (object) => {
 };
 
 // src/workspace/dependency.ts
-class DependencyGraph {
-  graph = new DirectedGraph;
-  callbacks = new Map;
+var DependencyGraph = class {
+  graph = new DirectedGraph();
+  callbacks = /* @__PURE__ */ new Map();
   add(urn, deps, callback) {
     this.callbacks.set(urn, callback);
     this.graph.mergeNode(urn);
@@ -428,13 +442,15 @@ class DependencyGraph {
     const graph = topologicalGenerations(this.graph);
     const errors = [];
     for (const list of graph) {
-      const result = await Promise.allSettled(list.map((urn) => {
-        const callback = this.callbacks.get(urn);
-        if (!callback) {
-          return;
-        }
-        return callback();
-      }));
+      const result = await Promise.allSettled(
+        list.map((urn) => {
+          const callback = this.callbacks.get(urn);
+          if (!callback) {
+            return;
+          }
+          return callback();
+        })
+      );
       for (const entry of result) {
         if (entry.status === "rejected") {
           if (entry.reason instanceof Error) {
@@ -450,7 +466,7 @@ class DependencyGraph {
     }
     return errors;
   }
-}
+};
 var dependentsOn = (resources, dependency) => {
   const dependents = [];
   for (const [urn, resource] of entries(resources)) {
@@ -462,39 +478,31 @@ var dependentsOn = (resources, dependency) => {
 };
 
 // src/workspace/error.ts
-class ResourceError extends Error {
-  urn;
-  type;
-  operation;
-  static wrap(urn, type, operation, error) {
-    if (error instanceof Error) {
-      return new ResourceError(urn, type, operation, error.message);
-    }
-    return new ResourceError(urn, type, operation, "Unknown Error");
-  }
+var ResourceError = class _ResourceError extends Error {
   constructor(urn, type, operation, message) {
     super(message);
     this.urn = urn;
     this.type = type;
     this.operation = operation;
   }
-}
-
-class AppError extends Error {
-  app;
-  issues;
+  static wrap(urn, type, operation, error) {
+    if (error instanceof Error) {
+      return new _ResourceError(urn, type, operation, error.message);
+    }
+    return new _ResourceError(urn, type, operation, "Unknown Error");
+  }
+};
+var AppError = class extends Error {
   constructor(app, issues, message) {
     super(message);
     this.app = app;
     this.issues = issues;
   }
-}
-
-class ResourceNotFound extends Error {
-}
-
-class ResourceAlreadyExists extends Error {
-}
+};
+var ResourceNotFound = class extends Error {
+};
+var ResourceAlreadyExists = class extends Error {
+};
 
 // src/workspace/state.ts
 var compareState = (left, right) => {
@@ -632,7 +640,7 @@ var deleteApp = async (app, opt) => {
     stackStates = stackStates.filter((stackState) => opt.filters.includes(stackState.name));
   }
   const queue = createConcurrencyQueue(opt.concurrency ?? 10);
-  const graph = new DependencyGraph;
+  const graph = new DependencyGraph();
   const allNodes = {};
   for (const stackState of Object.values(appState.stacks)) {
     for (const [urn, nodeState] of entries(stackState.nodes)) {
@@ -668,7 +676,7 @@ var requiresReplacement = (priorState, proposedState, replaceOnChanges) => {
     const priorValue = get(priorState, path);
     const proposedValue = get(proposedState, path);
     if (path.includes("*") && Array.isArray(priorValue)) {
-      for (let i = 0;i < priorValue.length; i++) {
+      for (let i = 0; i < priorValue.length; i++) {
         if (!compareState(priorValue[i], proposedValue[i])) {
           return true;
         }
@@ -837,10 +845,12 @@ var debug7 = createDebugger("Deploy App");
 var deployApp = async (app, opt) => {
   debug7(app.name, "start");
   const latestState = await opt.backend.state.get(app.urn);
-  const appState = migrateAppState(latestState ?? {
-    name: app.name,
-    stacks: {}
-  });
+  const appState = migrateAppState(
+    latestState ?? {
+      name: app.name,
+      stacks: {}
+    }
+  );
   const releaseOnExit = onExit(async () => {
     await opt.backend.state.update(app.urn, appState);
   });
@@ -855,7 +865,7 @@ var deployApp = async (app, opt) => {
     filteredOutStacks = app.stacks.filter((stack) => !opt.filters.includes(stack.name));
   }
   const queue = createConcurrencyQueue(opt.concurrency ?? 10);
-  const graph = new DependencyGraph;
+  const graph = new DependencyGraph();
   const allNodes = {};
   for (const stackState of Object.values(appState.stacks)) {
     for (const [urn, nodeState] of entries(stackState.nodes)) {
@@ -886,7 +896,15 @@ var deployApp = async (app, opt) => {
       for (const [urn2, nodeState] of entries(stackState.nodes)) {
         graph.add(urn2, dependentsOn(allNodes, urn2), async () => {
           if (nodeState.tag === "resource") {
-            await queue(() => deleteResource(appState.idempotentToken, urn2, nodeState, opt));
+            await queue(
+              () => deleteResource(
+                //
+                appState.idempotentToken,
+                urn2,
+                nodeState,
+                opt
+              )
+            );
           }
           delete stackState.nodes[urn2];
         });
@@ -903,7 +921,15 @@ var deployApp = async (app, opt) => {
       if (!resource) {
         graph.add(urn, dependentsOn(allNodes, urn), async () => {
           if (nodeState.tag === "resource") {
-            await queue(() => deleteResource(appState.idempotentToken, urn, nodeState, opt));
+            await queue(
+              () => deleteResource(
+                //
+                appState.idempotentToken,
+                urn,
+                nodeState,
+                opt
+              )
+            );
           }
           delete stackState.nodes[urn];
         });
@@ -915,8 +941,9 @@ var deployApp = async (app, opt) => {
       const partialNewResourceState = {
         dependencies,
         lifecycle: isResource(node) ? {
+          // deleteAfterCreate: meta.config?.deleteAfterCreate,
           retainOnDelete: getMeta(node).config?.retainOnDelete
-        } : undefined
+        } : void 0
       };
       graph.add(meta.urn, dependencies, () => {
         return queue(async () => {
@@ -925,7 +952,13 @@ var deployApp = async (app, opt) => {
           try {
             input = await resolveInputs(meta.input);
           } catch (error) {
-            throw ResourceError.wrap(meta.urn, meta.type, "resolve", error);
+            throw ResourceError.wrap(
+              //
+              meta.urn,
+              meta.type,
+              "resolve",
+              error
+            );
           }
           if (isDataSource(node)) {
             const meta2 = getMeta(node);
@@ -950,25 +983,52 @@ var deployApp = async (app, opt) => {
             if (!nodeState) {
               if (meta2.config?.import) {
                 const importedState = await importResource(node, input, opt);
-                const newResourceState = await updateResource(node, appState.idempotentToken, importedState.output, input, opt);
+                const newResourceState = await updateResource(
+                  node,
+                  appState.idempotentToken,
+                  importedState.output,
+                  input,
+                  opt
+                );
                 nodeState = stackState.nodes[meta2.urn] = {
                   ...importedState,
                   ...newResourceState,
                   ...partialNewResourceState
                 };
               } else {
-                const newResourceState = await createResource(node, appState.idempotentToken, input, opt);
+                const newResourceState = await createResource(
+                  node,
+                  appState.idempotentToken,
+                  input,
+                  opt
+                );
                 nodeState = stackState.nodes[meta2.urn] = {
                   ...newResourceState,
                   ...partialNewResourceState
                 };
               }
-            } else if (!compareState(nodeState.input, input)) {
+            } else if (
+              // --------------------------------------------------
+              // Check if any state has changed
+              !compareState(nodeState.input, input)
+            ) {
               let newResourceState;
               if (requiresReplacement(nodeState.input, input, meta2.config?.replaceOnChanges ?? [])) {
-                newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.output, input, opt);
+                newResourceState = await replaceResource(
+                  node,
+                  appState.idempotentToken,
+                  nodeState.output,
+                  input,
+                  opt
+                );
               } else {
-                newResourceState = await updateResource(node, appState.idempotentToken, nodeState.output, input, opt);
+                newResourceState = await updateResource(
+                  node,
+                  appState.idempotentToken,
+                  nodeState.output,
+                  input,
+                  opt
+                );
               }
               Object.assign(nodeState, {
                 input,
@@ -1025,42 +1085,48 @@ var refresh = async (app, opt) => {
   const appState = await opt.backend.state.get(app.urn);
   const queue = createConcurrencyQueue(opt.concurrency ?? 10);
   if (appState) {
-    await Promise.all(Object.values(appState.stacks).map((stackState) => {
-      return Promise.all(Object.values(stackState.nodes).map((nodeState) => {
-        return queue(async () => {
-          const provider = findProvider(opt.providers, nodeState.provider);
-          if (nodeState.tag === "data") {
-            const result = await provider.getData?.({
-              type: nodeState.type,
-              state: nodeState.output
+    await Promise.all(
+      Object.values(appState.stacks).map((stackState) => {
+        return Promise.all(
+          Object.values(stackState.nodes).map((nodeState) => {
+            return queue(async () => {
+              const provider = findProvider(opt.providers, nodeState.provider);
+              if (nodeState.tag === "data") {
+                const result = await provider.getData?.({
+                  type: nodeState.type,
+                  state: nodeState.output
+                });
+                if (result && !compareState(result.state, nodeState.output)) {
+                  nodeState.output = result.state;
+                  nodeState.input = result.state;
+                }
+              } else if (nodeState.tag === "resource") {
+                const result = await provider.getResource({
+                  type: nodeState.type,
+                  state: nodeState.output
+                });
+                if (result && !compareState(result.state, nodeState.output)) {
+                  nodeState.output = result.state;
+                  nodeState.input = result.state;
+                }
+              }
             });
-            if (result && !compareState(result.state, nodeState.output)) {
-              nodeState.output = result.state;
-              nodeState.input = result.state;
-            }
-          } else if (nodeState.tag === "resource") {
-            const result = await provider.getResource({
-              type: nodeState.type,
-              state: nodeState.output
-            });
-            if (result && !compareState(result.state, nodeState.output)) {
-              nodeState.output = result.state;
-              nodeState.input = result.state;
-            }
-          }
-        });
-      }));
-    }));
+          })
+        );
+      })
+    );
     await opt.backend.state.update(app.urn, appState);
   }
 };
 
 // src/workspace/workspace.ts
-class WorkSpace {
-  props;
+var WorkSpace = class {
   constructor(props) {
     this.props = props;
   }
+  /**
+   * Deploy the entire app or use the filter option to deploy specific stacks inside your app.
+   */
   deploy(app, options = {}) {
     return lockApp(this.props.backend.lock, app, async () => {
       try {
@@ -1070,6 +1136,9 @@ class WorkSpace {
       }
     });
   }
+  /**
+   * Delete the entire app or use the filter option to delete specific stacks inside your app.
+   */
   delete(app, options = {}) {
     return lockApp(this.props.backend.lock, app, async () => {
       try {
@@ -1079,9 +1148,15 @@ class WorkSpace {
       }
     });
   }
+  /**
+   * Hydrate the outputs of the resources & data-sources inside your app.
+   */
   hydrate(app) {
     return hydrate(app, this.props);
   }
+  /**
+   * Refresh the state of the resources & data-sources inside your app.
+   */
   refresh(app) {
     return lockApp(this.props.backend.lock, app, async () => {
       try {
@@ -1092,14 +1167,17 @@ class WorkSpace {
     });
   }
   async destroyProviders() {
-    await Promise.all(this.props.providers.map((p) => {
-      return p.destroy?.();
-    }));
+    await Promise.all(
+      this.props.providers.map((p) => {
+        return p.destroy?.();
+      })
+    );
   }
-}
+};
+
 // src/backend/memory/state.ts
-class MemoryStateBackend {
-  states = new Map;
+var MemoryStateBackend = class {
+  states = /* @__PURE__ */ new Map();
   async get(urn) {
     return this.states.get(urn);
   }
@@ -1112,10 +1190,11 @@ class MemoryStateBackend {
   clear() {
     this.states.clear();
   }
-}
+};
+
 // src/backend/memory/lock.ts
-class MemoryLockBackend {
-  locks = new Map;
+var MemoryLockBackend = class {
+  locks = /* @__PURE__ */ new Map();
   async insecureReleaseLock(urn) {
     this.locks.delete(urn);
   }
@@ -1137,14 +1216,13 @@ class MemoryLockBackend {
   clear() {
     this.locks.clear();
   }
-}
-// src/backend/file/state.ts
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-var debug8 = createDebugger("State");
+};
 
-class FileStateBackend {
-  props;
+// src/backend/file/state.ts
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { join } from "path";
+var debug8 = createDebugger("State");
+var FileStateBackend = class {
   constructor(props) {
     this.props = props;
   }
@@ -1169,21 +1247,20 @@ class FileStateBackend {
   async update(urn, state) {
     debug8("update");
     await this.mkdir();
-    await writeFile(this.stateFile(urn), JSON.stringify(state, undefined, 2));
+    await writeFile(this.stateFile(urn), JSON.stringify(state, void 0, 2));
   }
   async delete(urn) {
     debug8("delete");
     await this.mkdir();
     await rm(this.stateFile(urn));
   }
-}
-// src/backend/file/lock.ts
-import { mkdir as mkdir2, rm as rm2, stat } from "node:fs/promises";
-import { join as join2 } from "node:path";
-import { lock } from "proper-lockfile";
+};
 
-class FileLockBackend {
-  props;
+// src/backend/file/lock.ts
+import { mkdir as mkdir2, rm as rm2, stat } from "fs/promises";
+import { join as join2 } from "path";
+import { lock } from "proper-lockfile";
+var FileLockBackend = class {
   constructor(props) {
     this.props = props;
   }
@@ -1210,7 +1287,8 @@ class FileLockBackend {
       realpath: false
     });
   }
-}
+};
+
 // src/backend/aws/s3-state.ts
 import {
   DeleteObjectCommand,
@@ -1219,21 +1297,21 @@ import {
   S3Client,
   S3ServiceException
 } from "@aws-sdk/client-s3";
-
-class S3StateBackend {
-  props;
-  client;
+var S3StateBackend = class {
   constructor(props) {
     this.props = props;
     this.client = new S3Client(props);
   }
+  client;
   async get(urn) {
     let result;
     try {
-      result = await this.client.send(new GetObjectCommand({
-        Bucket: this.props.bucket,
-        Key: `${urn}.state`
-      }));
+      result = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.props.bucket,
+          Key: `${urn}.state`
+        })
+      );
     } catch (error) {
       if (error instanceof S3ServiceException && error.name === "NoSuchKey") {
         return;
@@ -1248,30 +1326,33 @@ class S3StateBackend {
     return state;
   }
   async update(urn, state) {
-    await this.client.send(new PutObjectCommand({
-      Bucket: this.props.bucket,
-      Key: `${urn}.state`,
-      Body: JSON.stringify(state)
-    }));
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.props.bucket,
+        Key: `${urn}.state`,
+        Body: JSON.stringify(state)
+      })
+    );
   }
   async delete(urn) {
-    await this.client.send(new DeleteObjectCommand({
-      Bucket: this.props.bucket,
-      Key: `${urn}.state`
-    }));
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.props.bucket,
+        Key: `${urn}.state`
+      })
+    );
   }
-}
+};
+
 // src/backend/aws/dynamodb-lock.ts
 import { DynamoDB } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
-
-class DynamoLockBackend {
-  props;
-  client;
+var DynamoLockBackend = class {
   constructor(props) {
     this.props = props;
     this.client = new DynamoDB(props);
   }
+  client;
   async insecureReleaseLock(urn) {
     await this.client.updateItem({
       TableName: this.props.tableName,
@@ -1312,10 +1393,11 @@ class DynamoLockBackend {
       });
     };
   }
-}
+};
+
 // src/helpers.ts
-import { createHash } from "node:crypto";
-import { readFile as readFile2 } from "node:fs/promises";
+import { createHash } from "crypto";
+import { readFile as readFile2 } from "fs/promises";
 var file = (path, encoding = "utf8") => {
   return new Future(async (resolve2, reject) => {
     try {
@@ -1345,25 +1427,37 @@ var createCustomResourceClass = (providerId, resourceType) => {
   }, {
     construct(_, [parent, id, input, config]) {
       const meta = createMeta("resource", `custom:${providerId}`, parent, resourceType, id, input, config);
-      const node = new Proxy({}, {
-        get(_2, key) {
-          if (key === nodeMetaSymbol) {
-            return meta;
+      const node = new Proxy(
+        {},
+        {
+          get(_2, key) {
+            if (key === nodeMetaSymbol) {
+              return meta;
+            }
+            if (key === "urn") {
+              return meta.urn;
+            }
+            if (typeof key === "symbol") {
+              return;
+            }
+            return meta.output((data) => data[key]);
           }
-          if (key === "urn") {
-            return meta.urn;
-          }
-          if (typeof key === "symbol") {
-            return;
-          }
-          return meta.output((data) => data[key]);
         }
-      });
+      );
       parent.add(node);
       return node;
     }
+    // get(_, key: string) {
+    // 	if (key === 'get') {
+    // 		return (...args: any[]) => {
+    // 			return get(...args)
+    // 		}
+    // 	}
+    // 	return
+    // },
   });
 };
+
 // src/custom/provider.ts
 var createCustomProvider = (providerId, resourceProviders) => {
   const version = 1;
@@ -1429,34 +1523,34 @@ var createCustomProvider = (providerId, resourceProviders) => {
   };
 };
 export {
-  resolveInputs,
-  output,
-  nodeMetaSymbol,
-  isResource,
-  isNode,
-  isDataSource,
-  getMeta,
-  findInputDeps,
-  enableDebug,
-  deferredOutput,
-  createMeta,
-  createDebugger,
-  createCustomResourceClass,
-  createCustomProvider,
-  WorkSpace,
-  Stack,
-  S3StateBackend,
-  ResourceNotFound,
-  ResourceError,
-  ResourceAlreadyExists,
-  Output,
-  MemoryStateBackend,
-  MemoryLockBackend,
-  Group,
-  Future,
-  FileStateBackend,
-  FileLockBackend,
-  DynamoLockBackend,
+  App,
   AppError,
-  App
+  DynamoLockBackend,
+  FileLockBackend,
+  FileStateBackend,
+  Future,
+  Group,
+  MemoryLockBackend,
+  MemoryStateBackend,
+  Output,
+  ResourceAlreadyExists,
+  ResourceError,
+  ResourceNotFound,
+  S3StateBackend,
+  Stack,
+  WorkSpace,
+  createCustomProvider,
+  createCustomResourceClass,
+  createDebugger,
+  createMeta,
+  deferredOutput,
+  enableDebug,
+  findInputDeps,
+  getMeta,
+  isDataSource,
+  isNode,
+  isResource,
+  nodeMetaSymbol,
+  output,
+  resolveInputs
 };

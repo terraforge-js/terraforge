@@ -1,9 +1,0 @@
-{
-	"extends": "../../tsconfig.json",
-	"compilerOptions": {
-		"outDir": "dist",
-		// "allowImportingTsExtensions": true,
-		"sourceMap": true
-	},
-	"include": ["src", "test"]
-}

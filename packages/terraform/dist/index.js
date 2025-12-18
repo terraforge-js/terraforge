@@ -4,13 +4,13 @@ import { fromJSON } from "@grpc/proto-loader";
 import { createDebugger } from "@terraforge/core";
 
 // src/plugin/diagnostic.ts
-class DiagnosticsError extends Error {
+var DiagnosticsError = class extends Error {
   diagnostics;
   constructor(diagnostics) {
     super(diagnostics[0]?.summary ?? "Diagnostic error");
     this.diagnostics = diagnostics;
   }
-}
+};
 var throwDiagnosticError = (response) => {
   const diagnostics = response.diagnostics.map((item) => ({
     severity: item.severity === 1 ? "error" : "warning",
@@ -686,15 +686,19 @@ var createPluginClient = async (props) => {
   if (!proto) {
     throw new Error(`We don't have support for the ${props.protocol} protocol`);
   }
-  const pack = fromJSON(proto);
-  const grpc = loadPackageDefinition(pack);
-  const client = new grpc["tfplugin" + props.version].Provider(`unix://${props.endpoint}`, credentials.createInsecure(), {
-    "grpc.max_receive_message_length": 100 * 1024 * 1024,
-    "grpc.max_send_message_length": 100 * 1024 * 1024
-  });
+  const pack2 = fromJSON(proto);
+  const grpc = loadPackageDefinition(pack2);
+  const client = new grpc["tfplugin" + props.version].Provider(
+    `unix://${props.endpoint}`,
+    credentials.createInsecure(),
+    {
+      "grpc.max_receive_message_length": 100 * 1024 * 1024,
+      "grpc.max_send_message_length": 100 * 1024 * 1024
+    }
+  );
   debug("init", props.protocol);
   await new Promise((resolve, reject) => {
-    const deadline = new Date;
+    const deadline = /* @__PURE__ */ new Date();
     deadline.setSeconds(deadline.getSeconds() + 10);
     client.waitForReady(deadline, (error) => {
       if (error) {
@@ -733,12 +737,12 @@ var createPluginClient = async (props) => {
 // src/plugin/download.ts
 import { createDebugger as createDebugger2 } from "@terraforge/core";
 import jszip from "jszip";
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { mkdir, stat, writeFile } from "fs/promises";
+import { homedir } from "os";
+import { join } from "path";
 
 // src/plugin/registry.ts
-import { arch, platform } from "node:os";
+import { arch, platform } from "os";
 import { compare } from "semver";
 var baseUrl = "https://registry.terraform.io/v1/providers";
 var getProviderVersions = async (org, type) => {
@@ -763,6 +767,7 @@ var getProviderVersions = async (org, type) => {
 };
 var getProviderDownloadUrl = async (org, type, version) => {
   const url = [
+    //
     baseUrl,
     org,
     type,
@@ -856,7 +861,7 @@ var downloadPlugin = async (props) => {
 
 // src/plugin/server.ts
 import { createDebugger as createDebugger3 } from "@terraforge/core";
-import { spawn } from "node:child_process";
+import { spawn } from "child_process";
 var debug3 = createDebugger3("Server");
 var createPluginServer = (props) => {
   return new Promise((resolve, reject) => {
@@ -893,7 +898,8 @@ var createPluginServer = (props) => {
             return;
           }
         }
-      } catch (error) {}
+      } catch (error) {
+      }
       debug3("failed");
       reject(new Error("Failed to start the plugin"));
     });
@@ -947,6 +953,7 @@ var parseBlock = (block) => {
     type: "object",
     version: block.version,
     description: block.description,
+    // deprecated: block.deprecated,
     properties
   };
 };
@@ -1018,6 +1025,7 @@ var parseAttribute = (attr) => {
     return {
       ...prop,
       ...parseBlock(attr.nestedType)
+      // properties: parseBlock(attr.nestedType).properties,
     };
   }
   throw new Error("Empty attr");
@@ -1122,12 +1130,11 @@ var formatAttributePath = (state) => {
     });
   });
 };
-
-class IncorrectType extends TypeError {
+var IncorrectType = class extends TypeError {
   constructor(type, path) {
     super(`${path.join(".")} should be a ${type}`);
   }
-}
+};
 var formatInputState = (schema, state, includeSchemaFields = true, path = []) => {
   if (state === null) {
     return null;
@@ -1199,7 +1206,7 @@ var formatInputState = (schema, state, includeSchemaFields = true, path = []) =>
 };
 var formatOutputState = (schema, state, path = []) => {
   if (state === null) {
-    return;
+    return void 0;
   }
   if (schema.type === "array") {
     if (Array.isArray(state)) {
@@ -1238,7 +1245,7 @@ var formatOutputState = (schema, state, path = []) => {
         }
         return object;
       } else {
-        return;
+        return void 0;
       }
     }
     throw new IncorrectType(schema.type, path);
@@ -1411,6 +1418,29 @@ var createPlugin6 = async ({
       });
       return formatOutputState(schema2, decodeDynamicValue(apply.newState));
     }
+    // async applyResourceChange(
+    // 	type: string,
+    // 	priorState: Record<string, unknown> | null,
+    // 	proposedState: Record<string, unknown> | null
+    // ) {
+    // 	const schema = getResourceSchema(resources, type)
+    // 	const preparedPriorState = formatInputState(schema, priorState)
+    // 	const preparedProposedState = formatInputState(schema, proposedState)
+    // 	const plan = await client.call('PlanResourceChange', {
+    // 		typeName: type,
+    // 		priorState: encodeDynamicValue(preparedPriorState),
+    // 		proposedNewState: encodeDynamicValue(preparedProposedState),
+    // 		config: encodeDynamicValue(preparedProposedState),
+    // 	})
+    // 	const plannedState = decodeDynamicValue(plan.plannedState)
+    // 	const apply = await client.call('ApplyResourceChange', {
+    // 		typeName: type,
+    // 		priorState: encodeDynamicValue(preparedPriorState),
+    // 		plannedState: encodeDynamicValue(plannedState),
+    // 		config: encodeDynamicValue(plannedState),
+    // 	})
+    // 	return formatOutputState(schema, decodeDynamicValue(apply.newState))
+    // },
   };
 };
 
@@ -1448,20 +1478,15 @@ var retry = async (tries, cb) => {
 import {
   ResourceNotFound
 } from "@terraforge/core";
-
-class TerraformProvider {
-  type;
-  id;
-  createPlugin;
-  config;
-  configured;
-  plugin;
+var TerraformProvider = class {
   constructor(type, id, createPlugin, config) {
     this.type = type;
     this.id = id;
     this.createPlugin = createPlugin;
     this.config = config;
   }
+  configured;
+  plugin;
   async configure() {
     const plugin = await this.prepare();
     if (!this.configured) {
@@ -1480,8 +1505,8 @@ class TerraformProvider {
     if (this.plugin) {
       const plugin = await this.plugin;
       plugin.stop();
-      this.plugin = undefined;
-      this.configured = undefined;
+      this.plugin = void 0;
+      this.configured = void 0;
     }
   }
   ownResource(id) {
@@ -1491,7 +1516,7 @@ class TerraformProvider {
     const plugin = await this.configure();
     const newState = await plugin.readResource(type, state);
     if (!newState) {
-      throw new ResourceNotFound;
+      throw new ResourceNotFound();
     }
     return {
       version: 0,
@@ -1511,7 +1536,9 @@ class TerraformProvider {
     const { requiresReplace } = await plugin.planResourceChange(type, priorState, proposedState);
     if (requiresReplace.length > 0) {
       const formattedAttrs = requiresReplace.map((p) => p.join(".")).join('", "');
-      throw new Error(`Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`);
+      throw new Error(
+        `Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`
+      );
     }
     const newState = await plugin.applyResourceChange(type, priorState, proposedState);
     return {
@@ -1527,9 +1554,10 @@ class TerraformProvider {
       try {
         const newState = await plugin.readResource(type, state);
         if (!newState) {
-          throw new ResourceNotFound;
+          throw new ResourceNotFound();
         }
-      } catch (_) {}
+      } catch (_) {
+      }
       throw error;
     }
   }
@@ -1543,28 +1571,45 @@ class TerraformProvider {
       state: data
     };
   }
-}
+  // async generateTypes(dir: string) {
+  // 	const plugin = await this.prepare()
+  // 	const schema = plugin.schema()
+  // 	const types = generateTypes(
+  // 		{
+  // 			[`${this.type}_provider`]: schema.provider,
+  // 		},
+  // 		schema.resources,
+  // 		schema.dataSources
+  // 	)
+  // 	await mkdir(dir, { recursive: true })
+  // 	await writeFile(join(dir, `${this.type}.d.ts`), types)
+  // 	await this.destroy()
+  // }
+};
 
 // src/resource.ts
 import { createMeta, nodeMetaSymbol } from "@terraforge/core";
 import { snakeCase as snakeCase2 } from "change-case";
 var createNamespaceProxy = (cb, scb) => {
-  const cache = new Map;
-  return new Proxy({}, {
-    get(_, key) {
-      if (!cache.has(key)) {
-        const value = typeof key === "symbol" ? scb?.(key) : cb(key);
-        cache.set(key, value);
+  const cache = /* @__PURE__ */ new Map();
+  return new Proxy(
+    {},
+    {
+      get(_, key) {
+        if (!cache.has(key)) {
+          const value = typeof key === "symbol" ? scb?.(key) : cb(key);
+          cache.set(key, value);
+        }
+        return cache.get(key);
+      },
+      set(_, key) {
+        if (typeof key === "string") {
+          throw new Error(`Cannot set property ${key} on read-only object.`);
+        }
+        throw new Error(`This object is read-only.`);
       }
-      return cache.get(key);
-    },
-    set(_, key) {
-      if (typeof key === "string") {
-        throw new Error(`Cannot set property ${key} on read-only object.`);
-      }
-      throw new Error(`This object is read-only.`);
     }
-  });
+  );
 };
 var createClassProxy = (construct, get) => {
   return new Proxy(class {
@@ -1596,11 +1641,14 @@ var createRecursiveProxy = ({
           return dataSource([...names, name.substring(3)], ...args);
         };
       } else {
-        return createClassProxy((...args) => {
-          return resource(ns, ...args);
-        }, (...args) => {
-          return dataSource(ns, ...args);
-        });
+        return createClassProxy(
+          (...args) => {
+            return resource(ns, ...args);
+          },
+          (...args) => {
+            return dataSource(ns, ...args);
+          }
+        );
       }
     });
   };
@@ -1612,29 +1660,52 @@ var createResourceProxy = (name) => {
       const type = snakeCase2(name + "_" + ns.join("_"));
       const provider = `terraform:${name}:${config?.provider ?? "default"}`;
       const meta = createMeta("resource", provider, parent, type, id, input, config);
-      const resource = createNamespaceProxy((key) => {
-        return meta.output((data) => data[key]);
-      }, (key) => {
-        if (key === nodeMetaSymbol) {
-          return meta;
+      const resource = createNamespaceProxy(
+        (key) => {
+          return meta.output((data) => data[key]);
+        },
+        (key) => {
+          if (key === nodeMetaSymbol) {
+            return meta;
+          }
+          return;
         }
-        return;
-      });
+      );
       parent.add(resource);
       return resource;
     },
+    // external: (ns: string[], id: string, input: State, config?: ResourceConfig) => {
+    // 	const type = snakeCase(ns.join('_'))
+    // 	const provider = `terraform:${ns[0]}:${config?.provider ?? 'default'}`
+    // 	const $ = createResourceMeta(provider, type, id, input, config)
+    // 	const resource = createNamespaceProxy(
+    // 		key => {
+    // 			if (key === '$') {
+    // 				return $
+    // 			}
+    // 			return $.output(data => data[key])
+    // 		},
+    // 		{ $ }
+    // 	) as Resource
+    // 	parent.add(resource)
+    // 	return resource
+    // },
+    // (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig)
     dataSource: (ns, parent, id, input, config) => {
       const type = snakeCase2(name + "_" + ns.join("_"));
       const provider = `terraform:${name}:${config?.provider ?? "default"}`;
       const meta = createMeta("data", provider, parent, type, id, input, config);
-      const dataSource = createNamespaceProxy((key) => {
-        return meta.output((data) => data[key]);
-      }, (key) => {
-        if (key === nodeMetaSymbol) {
-          return meta;
+      const dataSource = createNamespaceProxy(
+        (key) => {
+          return meta.output((data) => data[key]);
+        },
+        (key) => {
+          if (key === nodeMetaSymbol) {
+            return meta;
+          }
+          return;
         }
-        return;
-      });
+      );
       parent.add(dataSource);
       return dataSource;
     }
@@ -1650,9 +1721,15 @@ var createTerraformAPI = (props) => {
   const createPlugin = (pluginProps) => {
     return createLazyPlugin({ ...props.provider, ...pluginProps });
   };
-  return new Proxy(() => {}, {
+  return new Proxy(() => {
+  }, {
     apply(_, _this, [input, config]) {
-      return new TerraformProvider(props.namespace, config?.id ?? "default", createPlugin({ location: config?.location }), input);
+      return new TerraformProvider(
+        props.namespace,
+        config?.id ?? "default",
+        createPlugin({ location: config?.location }),
+        input
+      );
     },
     get(_, prop) {
       if (prop === "install") {
@@ -1662,10 +1739,11 @@ var createTerraformAPI = (props) => {
     }
   });
 };
+
 // src/type-gen.ts
 import { camelCase as camelCase2, pascalCase } from "change-case";
 var tab = (indent) => {
-  return "\t".repeat(indent);
+  return "	".repeat(indent);
 };
 var generateTypes = (providers, resources, dataSources) => {
   return [
@@ -1680,16 +1758,17 @@ var generateTypes = (providers, resources, dataSources) => {
     generateNamespace(resources, (name, prop, indent) => {
       const typeName = pascalCase(name);
       return [
+        // `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        // `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        // `${tab(indent)}export declare const ${typeName}: ResourceClass<${typeName}Input, ${typeName}Output>`,
         `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
         `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
         `${tab(indent)}export class ${typeName} {`,
         `${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
-        `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
+        // `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
         generateClassProperties(prop, indent + 1),
         `${tab(indent)}}`
-      ].join(`
-
-`);
+      ].join("\n\n");
     }),
     generateNamespace(dataSources, (name, prop, indent) => {
       const typeName = pascalCase(name);
@@ -1697,13 +1776,9 @@ var generateTypes = (providers, resources, dataSources) => {
         `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
         `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
         `${tab(indent)}export const get${typeName}:c.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
-      ].join(`
-
-`);
+      ].join("\n\n");
     })
-  ].join(`
-
-`);
+  ].join("\n\n");
 };
 var generateImport = (name, from) => {
   return `import * as ${name} from '${from}'`;
@@ -1743,6 +1818,7 @@ var generatePropertyOutputType = (prop, indent) => {
     wrap: (v, p, ctx) => ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v,
     filter: () => true,
     readonly: true,
+    // required: true,
     optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false
   });
 };
@@ -1753,11 +1829,11 @@ var generateClassProperties = (prop, indent) => {
   return Object.entries(prop.properties).map(([name, prop2]) => {
     return [
       prop2.description ? [`
-`, `	`.repeat(indent), `/** `, prop2.description.trim(), " */", `
-`].join("") : "",
+`, `	`.repeat(indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
       `	`.repeat(indent),
       "readonly ",
       camelCase2(name),
+      // ctx.optional(prop, ctx) ? '?' : '',
       ": ",
       generateValue(prop2, {
         readonly: true,
@@ -1766,12 +1842,12 @@ var generateClassProperties = (prop, indent) => {
         wrap: (v, p, ctx) => {
           return ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v;
         },
+        // ctx.depth === 1 ? `c.Output<${p.optional && !p.computed ? `${v} | undefined` : v}>` : v,
         indent: indent + 1,
         depth: 1
       })
     ].join("");
-  }).join(`
-`);
+  }).join("\n");
 };
 var groupByNamespace = (resources, minLevel, maxLevel) => {
   const grouped = {};
@@ -1809,11 +1885,9 @@ var generateNamespace = (resources, render) => {
         } else {
           return render(name2, resources[entry], indent + 1);
         }
-      }).join(`
-`),
+      }).join("\n"),
       `${tab(indent)}}`
-    ].join(`
-`);
+    ].join("\n");
   };
   return renderNamespace("root", grouped, 0);
 };
@@ -1834,27 +1908,27 @@ var generateValue = (prop, ctx) => {
   if (prop.type === "object" || prop.type === "array-object") {
     const type = [
       "{",
-      Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(([name, prop2]) => [
-        prop2.description ? [`
-`, `	`.repeat(ctx.indent), `/** `, prop2.description.trim(), " */", `
-`].join("") : "",
-        `	`.repeat(ctx.indent),
-        camelCase2(name),
-        ctx.optional(prop2, ctx) ? "?" : "",
-        ": ",
-        generateValue(prop2, { ...ctx, indent: ctx.indent + 1, depth: ctx.depth + 1 })
-      ].join("")).join(`
-`),
+      Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(
+        ([name, prop2]) => [
+          prop2.description ? [`
+`, `	`.repeat(ctx.indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
+          `	`.repeat(ctx.indent),
+          // ctx.readonly ? "readonly " : "",
+          camelCase2(name),
+          ctx.optional(prop2, ctx) ? "?" : "",
+          ": ",
+          generateValue(prop2, { ...ctx, indent: ctx.indent + 1, depth: ctx.depth + 1 })
+        ].join("")
+      ).join("\n"),
       `${`	`.repeat(ctx.indent - 1)}}`
-    ].join(`
-`);
+    ].join("\n");
     const object = ctx.readonly ? `Readonly<${type}>` : type;
     return ctx.wrap(object, prop, ctx);
   }
   throw new Error(`Unknown property type: ${prop.type}`);
 };
 export {
-  generateTypes,
+  TerraformProvider,
   createTerraformAPI,
-  TerraformProvider
+  generateTypes
 };

@@ -1,6 +1,6 @@
 {
 	"name": "@terraforge/core",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"type": "module",
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -11,7 +11,7 @@
 		}
 	},
 	"scripts": {
-		"build": "bunup src/index.ts --format esm --dts --clean --target node --packages external --out-dir ./dist",
+		"build": "tsup src/index.ts --format esm --dts --clean --out-dir ./dist",
 		"prepublishOnly": "bun run build",
 		"test": "bun test"
 	},

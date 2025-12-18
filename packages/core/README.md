@@ -52,7 +52,9 @@ This example illustrates how simple it is to define multi-stack resources withou
 ```ts
 const app = new App('todo-app')
 const storage = new Stack(app, 'storage')
-const list = new aws.s3.Bucket(storage, 'list', {})
+const list = new aws.s3.Bucket(storage, 'list', {
+	bucket: 'your-bucket-name'
+})
 
 const items = new Stack(app, 'items')
 const todo = new aws.s3.BucketObject(items, 'item', {

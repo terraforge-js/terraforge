@@ -1,6 +1,6 @@
 ```ts
 
-import { WorkSpace, FileStateBackend, FileLockBackend } from '@terraforge/core';
+import { WorkSpace, FileStateBackend, FileLockBackend, App, Stack } from '@terraforge/core';
 import { aws } from '@terraforge/aws';
 
 const workspace = new WorkSpace({
