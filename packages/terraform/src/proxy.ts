@@ -178,8 +178,8 @@ export const createTerraformProxy = (props: {
 		async uninstall(installProps?: InstallProps) {
 			await deletePlugin({ ...props.provider, ...installProps })
 		},
-		async isInstalled(installProps?: InstallProps) {
-			return await isPluginInstalled({ ...props.provider, ...installProps })
+		isInstalled(installProps?: InstallProps) {
+			return isPluginInstalled({ ...props.provider, ...installProps })
 		},
 		resource: (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig) => {
 			const type = snakeCase([props.namespace, ...ns].join('_'))
