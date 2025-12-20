@@ -1,3 +1,319 @@
+// src/type-gen.ts
+import { camelCase, pascalCase } from "change-case";
+var tab = (indent) => {
+  return "	".repeat(indent);
+};
+var generateTypes = (providers, resources, dataSources) => {
+  return [
+    generateImport("c", "@terraforge/core"),
+    generateImport("t", "@terraforge/terraform"),
+    "type _Record<T> = Record<string, T>",
+    generateInstallHelperFunctions(providers),
+    generateNamespace(providers, (name, prop, indent) => {
+      const typeName = name.toLowerCase();
+      return `${tab(indent)}export declare function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`;
+    }),
+    generateNamespace(resources, (name, prop, indent) => {
+      const typeName = pascalCase(name);
+      return [
+        // `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        // `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        // `${tab(indent)}export declare const ${typeName}: ResourceClass<${typeName}Input, ${typeName}Output>`,
+        `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        `${tab(indent)}export class ${typeName} {`,
+        `${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
+        // `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
+        generateClassProperties(prop, indent + 1),
+        `${tab(indent)}}`
+      ].join("\n\n");
+    }),
+    generateNamespace(dataSources, (name, prop, indent) => {
+      const typeName = pascalCase(name);
+      return [
+        `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+        `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+        `${tab(indent)}export const get${typeName}:c.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
+      ].join("\n\n");
+    })
+  ].join("\n\n");
+};
+var generateImport = (name, from) => {
+  return `import * as ${name} from '${from}'`;
+};
+var generateInstallHelperFunctions = (resources) => {
+  return generateNamespace(resources, (name, _prop, indent) => {
+    const typeName = name.toLowerCase();
+    return [
+      `${tab(indent)}export declare namespace ${typeName} {`,
+      `${tab(indent + 1)}export function install(props?: t.InstallProps): Promise<void>`,
+      `${tab(indent + 1)}export function uninstall(props?: t.InstallProps): Promise<void>`,
+      `${tab(indent + 1)}export function isInstalled(props?: t.InstallProps): Promise<boolean>`,
+      `${tab(indent)}}`
+    ].join("\n");
+  });
+};
+var generatePropertyInputConst = (prop, indent) => {
+  return generateValue(prop, {
+    depth: 0,
+    indent: indent + 1,
+    wrap: (v, _, ctx) => {
+      return `${v}${ctx.depth === 1 ? "," : ""}`;
+    },
+    filter: () => true,
+    optional: (p) => p.optional ?? false
+  });
+};
+var generatePropertyInputType = (prop, indent) => {
+  return generateValue(prop, {
+    depth: 0,
+    indent: indent + 1,
+    wrap: (v, p, ctx) => {
+      return ctx.depth > 0 ? p.optional ? `c.OptionalInput<${v}>` : `c.Input<${v}>` : v;
+    },
+    filter: (prop2) => !(prop2.computed && typeof prop2.optional === "undefined" && typeof prop2.required === "undefined"),
+    optional: (p) => p.optional ?? false
+  });
+};
+var generatePropertyOutputType = (prop, indent) => {
+  return generateValue(prop, {
+    depth: 0,
+    indent: indent + 1,
+    wrap: (v, p, ctx) => ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v,
+    filter: () => true,
+    readonly: true,
+    // required: true,
+    optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false
+  });
+};
+var generateClassProperties = (prop, indent) => {
+  if (prop.type !== "object") {
+    return "";
+  }
+  return Object.entries(prop.properties).map(([name, prop2]) => {
+    return [
+      prop2.description ? [`
+`, `	`.repeat(indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
+      `	`.repeat(indent),
+      "readonly ",
+      camelCase(name),
+      // ctx.optional(prop, ctx) ? '?' : '',
+      ": ",
+      generateValue(prop2, {
+        readonly: true,
+        filter: () => true,
+        optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false,
+        wrap: (v, p, ctx) => {
+          return ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v;
+        },
+        // ctx.depth === 1 ? `c.Output<${p.optional && !p.computed ? `${v} | undefined` : v}>` : v,
+        indent: indent + 1,
+        depth: 1
+      })
+    ].join("");
+  }).join("\n");
+};
+var groupByNamespace = (resources, minLevel, maxLevel) => {
+  const grouped = {};
+  const types = Object.keys(resources).sort();
+  for (const type of types) {
+    const names = type.split("_");
+    if (names.length < minLevel) {
+      throw new Error(`Resource not properly namespaced: ${type}`);
+    }
+    let current = grouped;
+    let count = Math.min(maxLevel, names.length - 1);
+    while (count--) {
+      const ns = camelCase(names.shift());
+      if (!current[ns]) {
+        current[ns] = {};
+      }
+      current = current[ns];
+    }
+    const name = pascalCase(names.join("_"));
+    current[name] = type;
+  }
+  return grouped;
+};
+var generateNamespace = (resources, render) => {
+  const grouped = groupByNamespace(resources, 1, 2);
+  const renderNamespace = (name, group, indent) => {
+    if (name === "default") {
+      name = "$default";
+    }
+    if (typeof group === "string") {
+      return render(name, resources[group], indent);
+    }
+    return [
+      `${tab(indent)}export ${indent === 0 ? "declare " : ""}namespace ${name.toLowerCase()} {`,
+      Object.entries(group).map(([name2, entry]) => {
+        if (typeof entry !== "string") {
+          return renderNamespace(name2, entry, indent + 1);
+        } else {
+          return render(name2, resources[entry], indent + 1);
+        }
+      }).join("\n"),
+      `${tab(indent)}}`
+    ].join("\n");
+  };
+  return Object.entries(grouped).map(([name, entry]) => {
+    return renderNamespace(name, entry, 0);
+  });
+};
+var generateValue = (prop, ctx) => {
+  if (["string", "number", "boolean", "unknown"].includes(prop.type)) {
+    return ctx.wrap(prop.type, prop, ctx);
+  }
+  if (prop.type === "array") {
+    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
+    const array = ctx.readonly ? `ReadonlyArray<${type}>` : `Array<${type}>`;
+    return ctx.wrap(array, prop, ctx);
+  }
+  if (prop.type === "record") {
+    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
+    const record = ctx.readonly ? `Readonly<_Record<${type}>>` : `_Record<${type}>`;
+    return ctx.wrap(record, prop, ctx);
+  }
+  if (prop.type === "object" || prop.type === "array-object") {
+    const type = [
+      "{",
+      Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(
+        ([name, prop2]) => [
+          prop2.description ? [`
+`, `	`.repeat(ctx.indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
+          `	`.repeat(ctx.indent),
+          // ctx.readonly ? "readonly " : "",
+          camelCase(name),
+          ctx.optional(prop2, ctx) ? "?" : "",
+          ": ",
+          generateValue(prop2, { ...ctx, indent: ctx.indent + 1, depth: ctx.depth + 1 })
+        ].join("")
+      ).join("\n"),
+      `${`	`.repeat(ctx.indent - 1)}}`
+    ].join("\n");
+    const object = ctx.readonly ? `Readonly<${type}>` : type;
+    return ctx.wrap(object, prop, ctx);
+  }
+  throw new Error(`Unknown property type: ${prop.type}`);
+};
+
+// src/provider.ts
+import {
+  ResourceNotFound
+} from "@terraforge/core";
+var TerraformProvider = class {
+  constructor(type, id, createPlugin, config) {
+    this.type = type;
+    this.id = id;
+    this.createPlugin = createPlugin;
+    this.config = config;
+  }
+  configured;
+  plugin;
+  async configure() {
+    const plugin = await this.prepare();
+    if (!this.configured) {
+      this.configured = plugin.configure(this.config);
+    }
+    await this.configured;
+    return plugin;
+  }
+  prepare() {
+    if (!this.plugin) {
+      this.plugin = this.createPlugin();
+    }
+    return this.plugin;
+  }
+  async destroy() {
+    if (this.plugin) {
+      const plugin = await this.plugin;
+      plugin.stop();
+      this.plugin = void 0;
+      this.configured = void 0;
+    }
+  }
+  ownResource(id) {
+    return `terraform:${this.type}:${this.id}` === id;
+  }
+  async getResource({ type, state }) {
+    const plugin = await this.configure();
+    const newState = await plugin.readResource(type, state);
+    if (!newState) {
+      throw new ResourceNotFound();
+    }
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async createResource({ type, state }) {
+    const plugin = await this.configure();
+    const newState = await plugin.applyResourceChange(type, null, state);
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async updateResource({ type, priorState, proposedState }) {
+    const plugin = await this.configure();
+    const { requiresReplace } = await plugin.planResourceChange(type, priorState, proposedState);
+    if (requiresReplace.length > 0) {
+      const formattedAttrs = requiresReplace.map((p) => p.join(".")).join('", "');
+      throw new Error(
+        `Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`
+      );
+    }
+    const newState = await plugin.applyResourceChange(type, priorState, proposedState);
+    return {
+      version: 0,
+      state: newState
+    };
+  }
+  async deleteResource({ type, state }) {
+    const plugin = await this.configure();
+    try {
+      await plugin.applyResourceChange(type, state, null);
+    } catch (error) {
+      try {
+        const newState = await plugin.readResource(type, state);
+        if (!newState) {
+          throw new ResourceNotFound();
+        }
+      } catch (_) {
+      }
+      throw error;
+    }
+  }
+  async getData({ type, state }) {
+    const plugin = await this.configure();
+    const data = await plugin.readDataSource(type, state);
+    if (!data) {
+      throw new Error(`Data source not found ${type}`);
+    }
+    return {
+      state: data
+    };
+  }
+  // async generateTypes(dir: string) {
+  // 	const plugin = await this.prepare()
+  // 	const schema = plugin.schema()
+  // 	const types = generateTypes(
+  // 		{
+  // 			[`${this.type}_provider`]: schema.provider,
+  // 		},
+  // 		schema.resources,
+  // 		schema.dataSources
+  // 	)
+  // 	await mkdir(dir, { recursive: true })
+  // 	await writeFile(join(dir, `${this.type}.d.ts`), types)
+  // 	await this.destroy()
+  // }
+};
+
+// src/proxy.ts
+import { createMeta, nodeMetaSymbol } from "@terraforge/core";
+import { snakeCase as snakeCase2 } from "change-case";
+
 // src/plugin/client.ts
 import { credentials, loadPackageDefinition } from "@grpc/grpc-js";
 import { fromJSON } from "@grpc/proto-loader";
@@ -737,9 +1053,9 @@ var createPluginClient = async (props) => {
 // src/plugin/download.ts
 import { createDebugger as createDebugger2 } from "@terraforge/core";
 import jszip from "jszip";
-import { mkdir, stat, writeFile } from "fs/promises";
+import { mkdir, rm, stat, writeFile } from "fs/promises";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 
 // src/plugin/registry.ts
 import { arch, platform } from "os";
@@ -826,15 +1142,33 @@ var exists = async (file) => {
 };
 var debug2 = createDebugger2("Downloader");
 var installPath = join(homedir(), ".terraforge", "plugins");
+var getInstallPath = (props) => {
+  const dir = props.location ?? installPath;
+  const file = join(dir, `${props.org}-${props.type}-${props.version}`);
+  return file;
+};
+var isPluginInstalled = (props) => {
+  return exists(getInstallPath(props));
+};
+var deletePlugin = async (props) => {
+  const file = getInstallPath(props);
+  const isAlreadyInstalled = await isPluginInstalled(props);
+  if (isAlreadyInstalled) {
+    debug2(props.type, "deleting...");
+    await rm(file);
+    debug2(props.type, "deleted");
+  } else {
+    debug2(props.type, "not installed");
+  }
+};
 var downloadPlugin = async (props) => {
   if (props.version === "latest") {
     const { latest } = await getProviderVersions(props.org, props.type);
     props.version = latest;
   }
-  const dir = props.location ?? installPath;
-  const file = join(dir, `${props.org}-${props.type}-${props.version}`);
-  const exist = await exists(file);
-  if (!exist) {
+  const file = getInstallPath(props);
+  const isAlreadyInstalled = await isPluginInstalled(props);
+  if (!isAlreadyInstalled) {
     debug2(props.type, "downloading...");
     const info = await getProviderDownloadUrl(props.org, props.type, props.version);
     const res = await fetch(info.url);
@@ -846,7 +1180,7 @@ var downloadPlugin = async (props) => {
     }
     const binary = await zipped.async("nodebuffer");
     debug2(props.type, "done");
-    await mkdir(dir, { recursive: true });
+    await mkdir(dirname(file), { recursive: true });
     await writeFile(file, binary, {
       mode: 509
     });
@@ -1090,7 +1424,7 @@ var parseType = (type) => {
 };
 
 // src/plugin/version/util.ts
-import { camelCase, snakeCase } from "change-case";
+import { camelCase as camelCase2, snakeCase } from "change-case";
 import { pack, unpack } from "msgpackr";
 var encodeDynamicValue = (value) => {
   return {
@@ -1184,7 +1518,7 @@ var formatInputState = (schema, state, includeSchemaFields = true, path = []) =>
       const object = {};
       if (includeSchemaFields) {
         for (const [key, prop] of Object.entries(schema.properties)) {
-          const value = state[camelCase(key)];
+          const value = state[camelCase2(key)];
           object[key] = formatInputState(prop, value, true, [...path, key]);
         }
       } else {
@@ -1229,7 +1563,7 @@ var formatOutputState = (schema, state, path = []) => {
       const object = {};
       for (const [key, prop] of Object.entries(schema.properties)) {
         const value = state[key];
-        object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
+        object[camelCase2(key)] = formatOutputState(prop, value, [...path, key]);
       }
       return object;
     }
@@ -1241,7 +1575,7 @@ var formatOutputState = (schema, state, path = []) => {
         const object = {};
         for (const [key, prop] of Object.entries(schema.properties)) {
           const value = state[0][key];
-          object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
+          object[camelCase2(key)] = formatOutputState(prop, value, [...path, key]);
         }
         return object;
       } else {
@@ -1474,133 +1808,13 @@ var retry = async (tries, cb) => {
   throw latestError;
 };
 
-// src/provider.ts
-import {
-  ResourceNotFound
-} from "@terraforge/core";
-var TerraformProvider = class {
-  constructor(type, id, createPlugin, config) {
-    this.type = type;
-    this.id = id;
-    this.createPlugin = createPlugin;
-    this.config = config;
-  }
-  configured;
-  plugin;
-  async configure() {
-    const plugin = await this.prepare();
-    if (!this.configured) {
-      this.configured = plugin.configure(this.config);
-    }
-    await this.configured;
-    return plugin;
-  }
-  prepare() {
-    if (!this.plugin) {
-      this.plugin = this.createPlugin();
-    }
-    return this.plugin;
-  }
-  async destroy() {
-    if (this.plugin) {
-      const plugin = await this.plugin;
-      plugin.stop();
-      this.plugin = void 0;
-      this.configured = void 0;
-    }
-  }
-  ownResource(id) {
-    return `terraform:${this.type}:${this.id}` === id;
-  }
-  async getResource({ type, state }) {
-    const plugin = await this.configure();
-    const newState = await plugin.readResource(type, state);
-    if (!newState) {
-      throw new ResourceNotFound();
-    }
-    return {
-      version: 0,
-      state: newState
-    };
-  }
-  async createResource({ type, state }) {
-    const plugin = await this.configure();
-    const newState = await plugin.applyResourceChange(type, null, state);
-    return {
-      version: 0,
-      state: newState
-    };
-  }
-  async updateResource({ type, priorState, proposedState }) {
-    const plugin = await this.configure();
-    const { requiresReplace } = await plugin.planResourceChange(type, priorState, proposedState);
-    if (requiresReplace.length > 0) {
-      const formattedAttrs = requiresReplace.map((p) => p.join(".")).join('", "');
-      throw new Error(
-        `Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`
-      );
-    }
-    const newState = await plugin.applyResourceChange(type, priorState, proposedState);
-    return {
-      version: 0,
-      state: newState
-    };
-  }
-  async deleteResource({ type, state }) {
-    const plugin = await this.configure();
-    try {
-      await plugin.applyResourceChange(type, state, null);
-    } catch (error) {
-      try {
-        const newState = await plugin.readResource(type, state);
-        if (!newState) {
-          throw new ResourceNotFound();
-        }
-      } catch (_) {
-      }
-      throw error;
-    }
-  }
-  async getData({ type, state }) {
-    const plugin = await this.configure();
-    const data = await plugin.readDataSource(type, state);
-    if (!data) {
-      throw new Error(`Data source not found ${type}`);
-    }
-    return {
-      state: data
-    };
-  }
-  // async generateTypes(dir: string) {
-  // 	const plugin = await this.prepare()
-  // 	const schema = plugin.schema()
-  // 	const types = generateTypes(
-  // 		{
-  // 			[`${this.type}_provider`]: schema.provider,
-  // 		},
-  // 		schema.resources,
-  // 		schema.dataSources
-  // 	)
-  // 	await mkdir(dir, { recursive: true })
-  // 	await writeFile(join(dir, `${this.type}.d.ts`), types)
-  // 	await this.destroy()
-  // }
-};
-
-// src/resource.ts
-import { createMeta, nodeMetaSymbol } from "@terraforge/core";
-import { snakeCase as snakeCase2 } from "change-case";
-var createNamespaceProxy = (cb, scb) => {
-  const cache = /* @__PURE__ */ new Map();
+// src/proxy.ts
+var createResourceProxy = (cb) => {
   return new Proxy(
     {},
     {
       get(_, key) {
-        if (!cache.has(key)) {
-          const value = typeof key === "symbol" ? scb?.(key) : cb(key);
-          cache.set(key, value);
-        }
-        return cache.get(key);
+        return cb(key);
       },
       set(_, key) {
         if (typeof key === "string") {
@@ -1610,6 +1824,49 @@ var createNamespaceProxy = (cb, scb) => {
       }
     }
   );
+};
+var createNamespaceProxy = (cb) => {
+  const cache = /* @__PURE__ */ new Map();
+  return new Proxy(
+    {},
+    {
+      get(_, key) {
+        if (typeof key === "string") {
+          if (!cache.has(key)) {
+            const value = cb(key);
+            cache.set(key, value);
+          }
+          return cache.get(key);
+        }
+        return;
+      },
+      set(_, key) {
+        if (typeof key === "string") {
+          throw new Error(`Cannot set property ${key} on read-only object.`);
+        }
+        throw new Error(`This object is read-only.`);
+      }
+    }
+  );
+};
+var createRootProxy = (apply, get) => {
+  const cache = /* @__PURE__ */ new Map();
+  return new Proxy(() => {
+  }, {
+    apply(_, _this, args) {
+      return apply(...args);
+    },
+    get(_, key) {
+      if (typeof key === "string") {
+        if (!cache.has(key)) {
+          const value = get(key);
+          cache.set(key, value);
+        }
+        return cache.get(key);
+      }
+      return;
+    }
+  });
 };
 var createClassProxy = (construct, get) => {
   return new Proxy(class {
@@ -1628,307 +1885,102 @@ var createClassProxy = (construct, get) => {
   });
 };
 var createRecursiveProxy = ({
+  provider,
+  install,
+  uninstall,
+  isInstalled,
   resource,
   dataSource
 }) => {
-  const createProxy = (names) => {
-    return createNamespaceProxy((name) => {
-      const ns = [...names, name];
-      if (name === name.toLowerCase()) {
-        return createProxy(ns);
-      } else if (name.startsWith("get")) {
-        return (...args) => {
-          return dataSource([...names, name.substring(3)], ...args);
-        };
-      } else {
-        return createClassProxy(
-          (...args) => {
-            return resource(ns, ...args);
-          },
-          (...args) => {
-            return dataSource(ns, ...args);
-          }
-        );
-      }
-    });
-  };
-  return createProxy([]);
-};
-var createResourceProxy = (name) => {
-  return createRecursiveProxy({
-    resource: (ns, parent, id, input, config) => {
-      const type = snakeCase2(name + "_" + ns.join("_"));
-      const provider = `terraform:${name}:${config?.provider ?? "default"}`;
-      const meta = createMeta("resource", provider, parent, type, id, input, config);
-      const resource = createNamespaceProxy(
-        (key) => {
-          return meta.output((data) => data[key]);
+  const findNextProxy = (ns, name) => {
+    if (name === name.toLowerCase()) {
+      return createNamespaceProxy((key) => {
+        return findNextProxy([...ns, name], key);
+      });
+    } else if (name.startsWith("get")) {
+      return (...args) => {
+        return dataSource([...ns, name.substring(3)], ...args);
+      };
+    } else {
+      return createClassProxy(
+        (...args) => {
+          return resource([...ns, name], ...args);
         },
-        (key) => {
-          if (key === nodeMetaSymbol) {
-            return meta;
-          }
-          return;
+        (...args) => {
+          return dataSource([...ns, name], ...args);
         }
       );
+    }
+  };
+  return createRootProxy(provider, (key) => {
+    if (key === "install") {
+      return install;
+    }
+    if (key === "uninstall") {
+      return uninstall;
+    }
+    if (key === "isInstalled") {
+      return isInstalled;
+    }
+    return findNextProxy([], key);
+  });
+};
+var createTerraformProxy = (props) => {
+  return createRecursiveProxy({
+    provider(input, config) {
+      return new TerraformProvider(
+        props.namespace,
+        config?.id ?? "default",
+        createLazyPlugin({
+          ...props.provider,
+          location: config?.location
+        }),
+        input
+      );
+    },
+    async install(installProps) {
+      await downloadPlugin({ ...props.provider, ...installProps });
+    },
+    async uninstall(installProps) {
+      await deletePlugin({ ...props.provider, ...installProps });
+    },
+    async isInstalled(installProps) {
+      return await isPluginInstalled({ ...props.provider, ...installProps });
+    },
+    resource: (ns, parent, id, input, config) => {
+      const type = snakeCase2([props.namespace, ...ns].join("_"));
+      const provider = `terraform:${props.namespace}:${config?.provider ?? "default"}`;
+      const meta = createMeta("resource", provider, parent, type, id, input, config);
+      const resource = createResourceProxy((key) => {
+        if (typeof key === "string") {
+          return meta.output((data) => data[key]);
+        } else if (key === nodeMetaSymbol) {
+          return meta;
+        }
+        return;
+      });
       parent.add(resource);
       return resource;
     },
-    // external: (ns: string[], id: string, input: State, config?: ResourceConfig) => {
-    // 	const type = snakeCase(ns.join('_'))
-    // 	const provider = `terraform:${ns[0]}:${config?.provider ?? 'default'}`
-    // 	const $ = createResourceMeta(provider, type, id, input, config)
-    // 	const resource = createNamespaceProxy(
-    // 		key => {
-    // 			if (key === '$') {
-    // 				return $
-    // 			}
-    // 			return $.output(data => data[key])
-    // 		},
-    // 		{ $ }
-    // 	) as Resource
-    // 	parent.add(resource)
-    // 	return resource
-    // },
-    // (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig)
     dataSource: (ns, parent, id, input, config) => {
-      const type = snakeCase2(name + "_" + ns.join("_"));
-      const provider = `terraform:${name}:${config?.provider ?? "default"}`;
+      const type = snakeCase2([props.namespace, ...ns].join("_"));
+      const provider = `terraform:${props.namespace}:${config?.provider ?? "default"}`;
       const meta = createMeta("data", provider, parent, type, id, input, config);
-      const dataSource = createNamespaceProxy(
-        (key) => {
+      const dataSource = createResourceProxy((key) => {
+        if (typeof key === "string") {
           return meta.output((data) => data[key]);
-        },
-        (key) => {
-          if (key === nodeMetaSymbol) {
-            return meta;
-          }
-          return;
+        } else if (key === nodeMetaSymbol) {
+          return meta;
         }
-      );
+        return;
+      });
       parent.add(dataSource);
       return dataSource;
     }
   });
 };
-
-// src/api.ts
-var createTerraformAPI = (props) => {
-  const resource = createResourceProxy(props.namespace);
-  const install = async (installProps) => {
-    await downloadPlugin({ ...props.provider, ...installProps });
-  };
-  const createPlugin = (pluginProps) => {
-    return createLazyPlugin({ ...props.provider, ...pluginProps });
-  };
-  return new Proxy(() => {
-  }, {
-    apply(_, _this, [input, config]) {
-      return new TerraformProvider(
-        props.namespace,
-        config?.id ?? "default",
-        createPlugin({ location: config?.location }),
-        input
-      );
-    },
-    get(_, prop) {
-      if (prop === "install") {
-        return install;
-      }
-      return resource;
-    }
-  });
-};
-
-// src/type-gen.ts
-import { camelCase as camelCase2, pascalCase } from "change-case";
-var tab = (indent) => {
-  return "	".repeat(indent);
-};
-var generateTypes = (providers, resources, dataSources) => {
-  return [
-    generateImport("c", "@terraforge/core"),
-    generateImport("t", "@terraforge/terraform"),
-    "type _Record<T> = Record<string, T>",
-    generateInstallFunction(providers),
-    generateNamespace(providers, (name, prop, indent) => {
-      const typeName = name.toLowerCase();
-      return `${tab(indent)}export function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`;
-    }),
-    generateNamespace(resources, (name, prop, indent) => {
-      const typeName = pascalCase(name);
-      return [
-        // `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        // `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        // `${tab(indent)}export declare const ${typeName}: ResourceClass<${typeName}Input, ${typeName}Output>`,
-        `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        `${tab(indent)}export class ${typeName} {`,
-        `${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
-        // `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
-        generateClassProperties(prop, indent + 1),
-        `${tab(indent)}}`
-      ].join("\n\n");
-    }),
-    generateNamespace(dataSources, (name, prop, indent) => {
-      const typeName = pascalCase(name);
-      return [
-        `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        `${tab(indent)}export const get${typeName}:c.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
-      ].join("\n\n");
-    })
-  ].join("\n\n");
-};
-var generateImport = (name, from) => {
-  return `import * as ${name} from '${from}'`;
-};
-var generateInstallFunction = (resources) => {
-  return generateNamespace(resources, (name, _prop, indent) => {
-    const typeName = name.toLowerCase();
-    return `${tab(indent)}export namespace ${typeName} { export function install(props?: t.InstallProps): Promise<void> }`;
-  });
-};
-var generatePropertyInputConst = (prop, indent) => {
-  return generateValue(prop, {
-    depth: 0,
-    indent: indent + 1,
-    wrap: (v, _, ctx) => {
-      return `${v}${ctx.depth === 1 ? "," : ""}`;
-    },
-    filter: () => true,
-    optional: (p) => p.optional ?? false
-  });
-};
-var generatePropertyInputType = (prop, indent) => {
-  return generateValue(prop, {
-    depth: 0,
-    indent: indent + 1,
-    wrap: (v, p, ctx) => {
-      return ctx.depth > 0 ? p.optional ? `c.OptionalInput<${v}>` : `c.Input<${v}>` : v;
-    },
-    filter: (prop2) => !(prop2.computed && typeof prop2.optional === "undefined" && typeof prop2.required === "undefined"),
-    optional: (p) => p.optional ?? false
-  });
-};
-var generatePropertyOutputType = (prop, indent) => {
-  return generateValue(prop, {
-    indent: indent + 1,
-    depth: 0,
-    wrap: (v, p, ctx) => ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v,
-    filter: () => true,
-    readonly: true,
-    // required: true,
-    optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false
-  });
-};
-var generateClassProperties = (prop, indent) => {
-  if (prop.type !== "object") {
-    return "";
-  }
-  return Object.entries(prop.properties).map(([name, prop2]) => {
-    return [
-      prop2.description ? [`
-`, `	`.repeat(indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
-      `	`.repeat(indent),
-      "readonly ",
-      camelCase2(name),
-      // ctx.optional(prop, ctx) ? '?' : '',
-      ": ",
-      generateValue(prop2, {
-        readonly: true,
-        filter: () => true,
-        optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false,
-        wrap: (v, p, ctx) => {
-          return ctx.depth === 1 ? p.optional && !p.computed ? `c.OptionalOutput<${v}>` : `c.Output<${v}>` : v;
-        },
-        // ctx.depth === 1 ? `c.Output<${p.optional && !p.computed ? `${v} | undefined` : v}>` : v,
-        indent: indent + 1,
-        depth: 1
-      })
-    ].join("");
-  }).join("\n");
-};
-var groupByNamespace = (resources, minLevel, maxLevel) => {
-  const grouped = {};
-  const types = Object.keys(resources).sort();
-  for (const type of types) {
-    const names = type.split("_");
-    if (names.length < minLevel) {
-      throw new Error(`Resource not properly namespaced: ${type}`);
-    }
-    let current = grouped;
-    let count = Math.min(maxLevel, names.length - 1);
-    while (count--) {
-      const ns = camelCase2(names.shift());
-      if (!current[ns]) {
-        current[ns] = {};
-      }
-      current = current[ns];
-    }
-    const name = pascalCase(names.join("_"));
-    current[name] = type;
-  }
-  return grouped;
-};
-var generateNamespace = (resources, render) => {
-  const grouped = groupByNamespace(resources, 1, 2);
-  const renderNamespace = (name, group, indent) => {
-    if (name === "default") {
-      name = "$default";
-    }
-    return [
-      `${tab(indent)}export ${indent === 0 ? "declare " : ""}namespace ${name.toLowerCase()} {`,
-      Object.entries(group).map(([name2, entry]) => {
-        if (typeof entry !== "string") {
-          return renderNamespace(name2, entry, indent + 1);
-        } else {
-          return render(name2, resources[entry], indent + 1);
-        }
-      }).join("\n"),
-      `${tab(indent)}}`
-    ].join("\n");
-  };
-  return renderNamespace("root", grouped, 0);
-};
-var generateValue = (prop, ctx) => {
-  if (["string", "number", "boolean", "unknown"].includes(prop.type)) {
-    return ctx.wrap(prop.type, prop, ctx);
-  }
-  if (prop.type === "array") {
-    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
-    const array = ctx.readonly ? `ReadonlyArray<${type}>` : `Array<${type}>`;
-    return ctx.wrap(array, prop, ctx);
-  }
-  if (prop.type === "record") {
-    const type = generateValue(prop.item, { ...ctx, depth: ctx.depth + 1 });
-    const record = ctx.readonly ? `Readonly<_Record<${type}>>` : `_Record<${type}>`;
-    return ctx.wrap(record, prop, ctx);
-  }
-  if (prop.type === "object" || prop.type === "array-object") {
-    const type = [
-      "{",
-      Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(
-        ([name, prop2]) => [
-          prop2.description ? [`
-`, `	`.repeat(ctx.indent), `/** `, prop2.description.trim(), " */", "\n"].join("") : "",
-          `	`.repeat(ctx.indent),
-          // ctx.readonly ? "readonly " : "",
-          camelCase2(name),
-          ctx.optional(prop2, ctx) ? "?" : "",
-          ": ",
-          generateValue(prop2, { ...ctx, indent: ctx.indent + 1, depth: ctx.depth + 1 })
-        ].join("")
-      ).join("\n"),
-      `${`	`.repeat(ctx.indent - 1)}}`
-    ].join("\n");
-    const object = ctx.readonly ? `Readonly<${type}>` : type;
-    return ctx.wrap(object, prop, ctx);
-  }
-  throw new Error(`Unknown property type: ${prop.type}`);
-};
 export {
   TerraformProvider,
-  createTerraformAPI,
+  createTerraformProxy,
   generateTypes
 };

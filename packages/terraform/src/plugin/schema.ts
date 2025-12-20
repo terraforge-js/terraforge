@@ -37,10 +37,10 @@ type NestedBlock = {
 	block: Block
 	nesting: number
 
-	/** @deprecated */
+	/** deprecated */
 	minItems?: Long
 
-	/** @deprecated */
+	/** deprecated */
 	maxItems?: Long
 }
 

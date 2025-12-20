@@ -2,6 +2,13 @@
 	"name": "@terraforge/core",
 	"version": "0.0.5",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/terraforge-js/terraforge.git"
+	},
+	"bugs": {
+		"url": "https://github.com/terraforge-js/terraforge/issues"
+	},
 	"module": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {

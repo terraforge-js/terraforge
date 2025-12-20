@@ -1,23 +1,5 @@
 import { Provider, State as State$1, GetProps, CreateProps, UpdateProps, DeleteProps, GetDataProps } from '@terraforge/core';
 
-type Version = `${number}.${number}.${number}` | 'latest';
-
-type TerraformProviderConfig = {
-    id?: string;
-    location?: string;
-};
-type InstallProps = {
-    location?: string;
-};
-declare const createTerraformAPI: <T>(props: {
-    namespace: string;
-    provider: {
-        org: string;
-        type: string;
-        version: Version;
-    };
-}) => T;
-
 type Property = {
     description?: string;
     required?: boolean;
@@ -89,4 +71,22 @@ declare class TerraformProvider implements Provider {
     }>;
 }
 
-export { type InstallProps, TerraformProvider, type TerraformProviderConfig, createTerraformAPI, generateTypes };
+type Version = `${number}.${number}.${number}` | 'latest';
+
+type TerraformProviderConfig = {
+    id?: string;
+    location?: string;
+};
+type InstallProps = {
+    location?: string;
+};
+declare const createTerraformProxy: (props: {
+    namespace: string;
+    provider: {
+        org: string;
+        type: string;
+        version: Version;
+    };
+}) => () => void;
+
+export { type InstallProps, TerraformProvider, type TerraformProviderConfig, createTerraformProxy, generateTypes };

@@ -1,10 +1,17 @@
 {
 	"name": "@terraforge/aws",
-	"version": "6.27.1",
+	"version": "6.27.3",
 	"provider": {
 		"org": "hashicorp",
 		"type": "aws",
 		"version": "6.27.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/terraforge-js/terraforge.git"
+	},
+	"bugs": {
+		"url": "https://github.com/terraforge-js/terraforge/issues"
 	},
 	"type": "module",
 	"module": "./dist/index.js",
