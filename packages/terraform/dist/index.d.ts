@@ -20,7 +20,7 @@ type Property = {
     type: 'unknown';
 });
 
-declare const generateTypes: (providers: Record<string, Property>, resources: Record<string, Property>, dataSources: Record<string, Property>) => string;
+declare const generateTypes: (namespace: string, provider: Property, resources: Record<string, Property>, dataSources: Record<string, Property>) => string;
 
 type State = Record<string, unknown>;
 type Plugin = Readonly<{

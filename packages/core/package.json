@@ -19,7 +19,7 @@
 	},
 	"scripts": {
 		"build": "tsup src/index.ts --format esm --dts --clean --out-dir ./dist",
-		"prepublishOnly": "bun run build",
+		"prepublishOnly": "if bun run test; then bun run build; else exit; fi",
 		"test": "bun test"
 	},
 	"dependencies": {

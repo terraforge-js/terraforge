@@ -1,26 +1,27 @@
 import { App, isDataSource, isNode, isResource, Stack } from '@terraforge/core'
-import { createTerraformAPI, TerraformProvider } from '../src'
+import { createTerraformProxy, TerraformProvider } from '../src'
 
 describe('Terraform Proxy API', () => {
 	const app = new App('app')
 	const stack = new Stack(app, 'stack')
-	const provider = createTerraformAPI<any>({
+	const provider = createTerraformProxy({
 		namespace: 'example',
 		provider: {
 			org: 'example',
 			type: 'example',
 			version: '1.0.0',
 		},
-	})
+	}) as any
 
 	it('the root provider should be a factory function for a TerraformProvider', () => {
-		expectTypeOf(provider).toBeAny()
 		expect(provider).toBeTypeOf('function')
 		expect(provider()).toBeInstanceOf(TerraformProvider)
 	})
 
-	it('the provider should provide a install function', () => {
+	it('the provider should provide the install utility functions', () => {
 		expect(provider.install).toBeTypeOf('function')
+		expect(provider.uninstall).toBeTypeOf('function')
+		expect(provider.isInstalled).toBeTypeOf('function')
 	})
 
 	it('lowercase access on the provider should be a namespace', () => {
@@ -28,15 +29,19 @@ describe('Terraform Proxy API', () => {
 	})
 
 	it('capitalized access on the provider should be a resource class', () => {
+		expect(provider.Resource).toBeTypeOf('function')
 		expect(provider.ns.Resource).toBeTypeOf('function')
+		expect(provider.ns.ns.Resource).toBeTypeOf('function')
 	})
 
 	it('the get function on a resource should be a datasource function', () => {
+		expect(provider.Resource.get).toBeTypeOf('function')
 		expect(provider.ns.Resource.get).toBeTypeOf('function')
+		expect(provider.ns.ns.Resource.get).toBeTypeOf('function')
 	})
 
 	it('a resource instance should be a node', () => {
-		const resource = new provider.ns.Resource(stack, 'resource', {})
+		const resource = new provider.Resource(stack, 'resource', {})
 		expect(resource).toBeTypeOf('object')
 		expect(isNode(resource)).toBe(true)
 		expect(isResource(resource)).toBe(true)
@@ -44,11 +49,11 @@ describe('Terraform Proxy API', () => {
 	})
 
 	it('capitalized access with the "get" prefix should be a datasource function', () => {
-		expect(provider.ns.getResource).toBeTypeOf('function')
+		expect(provider.getResource).toBeTypeOf('function')
 	})
 
 	it('a datasource instance should be a node', () => {
-		const dataSource = provider.ns.getDataSource(stack, 'dataSource', {})
+		const dataSource = provider.getDataSource(stack, 'dataSource', {})
 		expect(dataSource).toBeTypeOf('object')
 		expect(isNode(dataSource)).toBe(true)
 		expect(isResource(dataSource)).toBe(false)

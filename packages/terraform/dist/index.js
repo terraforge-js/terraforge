@@ -3,55 +3,56 @@ import { camelCase, pascalCase } from "change-case";
 var tab = (indent) => {
   return "	".repeat(indent);
 };
-var generateTypes = (providers, resources, dataSources) => {
+var generateTypes = (namespace, provider, resources, dataSources) => {
   return [
     generateImport("c", "@terraforge/core"),
     generateImport("t", "@terraforge/terraform"),
     "type _Record<T> = Record<string, T>",
-    generateInstallHelperFunctions(providers),
-    generateNamespace(providers, (name, prop, indent) => {
-      const typeName = name.toLowerCase();
-      return `${tab(indent)}export declare function ${typeName}(props: ${generatePropertyInputConst(prop, indent)}, config?: t.TerraformProviderConfig): t.TerraformProvider`;
-    }),
-    generateNamespace(resources, (name, prop, indent) => {
-      const typeName = pascalCase(name);
-      return [
-        // `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        // `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        // `${tab(indent)}export declare const ${typeName}: ResourceClass<${typeName}Input, ${typeName}Output>`,
-        `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        `${tab(indent)}export class ${typeName} {`,
-        `${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
-        // `${tab(indent + 1)}readonly $: c.ResourceMeta<${typeName}Input, ${typeName}Output>`,
-        generateClassProperties(prop, indent + 1),
-        `${tab(indent)}}`
-      ].join("\n\n");
-    }),
-    generateNamespace(dataSources, (name, prop, indent) => {
-      const typeName = pascalCase(name);
-      return [
-        `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
-        `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
-        `${tab(indent)}export const get${typeName}:c.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
-      ].join("\n\n");
-    })
+    generateInstallHelperFunctions(namespace),
+    generateProviderFactoryTypes(namespace, provider),
+    generateResourceTypes(resources),
+    generateDataSourceTypes(dataSources)
   ].join("\n\n");
+};
+var generateResourceTypes = (resources) => {
+  return generateNamespace(resources, (name, prop, indent) => {
+    const typeName = pascalCase(name);
+    return [
+      `${tab(indent)}export type ${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+      `${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+      `${tab(indent)}export class ${typeName} {`,
+      `${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
+      generateClassProperties(prop, indent + 1),
+      `${tab(indent)}}`
+    ].join("\n\n");
+  });
+};
+var generateDataSourceTypes = (dataSources) => {
+  return generateNamespace(dataSources, (name, prop, indent) => {
+    const typeName = pascalCase(name);
+    return [
+      `${tab(indent)}export type Get${typeName}Input = ${generatePropertyInputType(prop, indent)}`,
+      `${tab(indent)}export type Get${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
+      `${tab(indent)}export const get${typeName}:c.DataSourceFunction<Get${typeName}Input, Get${typeName}Output>`
+    ].join("\n\n");
+  });
+};
+var generateProviderFactoryTypes = (namespace, provider) => {
+  const typeName = namespace.toLowerCase();
+  return `export declare function ${typeName}(props: ${generatePropertyInputConst(provider, 0)}, config?: t.TerraformProviderConfig): t.TerraformProvider`;
 };
 var generateImport = (name, from) => {
   return `import * as ${name} from '${from}'`;
 };
-var generateInstallHelperFunctions = (resources) => {
-  return generateNamespace(resources, (name, _prop, indent) => {
-    const typeName = name.toLowerCase();
-    return [
-      `${tab(indent)}export declare namespace ${typeName} {`,
-      `${tab(indent + 1)}export function install(props?: t.InstallProps): Promise<void>`,
-      `${tab(indent + 1)}export function uninstall(props?: t.InstallProps): Promise<void>`,
-      `${tab(indent + 1)}export function isInstalled(props?: t.InstallProps): Promise<boolean>`,
-      `${tab(indent)}}`
-    ].join("\n");
-  });
+var generateInstallHelperFunctions = (namespace) => {
+  const typeName = namespace.toLowerCase();
+  return [
+    `export declare namespace ${typeName} {`,
+    `${tab(1)}export function install(props?: t.InstallProps): Promise<void>`,
+    `${tab(1)}export function uninstall(props?: t.InstallProps): Promise<void>`,
+    `${tab(1)}export function isInstalled(props?: t.InstallProps): Promise<boolean>`,
+    `}`
+  ].join("\n");
 };
 var generatePropertyInputConst = (prop, indent) => {
   return generateValue(prop, {
@@ -1944,8 +1945,8 @@ var createTerraformProxy = (props) => {
     async uninstall(installProps) {
       await deletePlugin({ ...props.provider, ...installProps });
     },
-    async isInstalled(installProps) {
-      return await isPluginInstalled({ ...props.provider, ...installProps });
+    isInstalled(installProps) {
+      return isPluginInstalled({ ...props.provider, ...installProps });
     },
     resource: (ns, parent, id, input, config) => {
       const type = snakeCase2([props.namespace, ...ns].join("_"));
