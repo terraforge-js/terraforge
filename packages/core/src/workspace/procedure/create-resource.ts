@@ -27,10 +27,25 @@ export const createResource = async (
 	let result
 
 	try {
+		await opt.hooks?.beforeResourceCreate?.({
+			urn: resource.urn,
+			type: meta.type,
+			resource,
+			newInput: input,
+		})
+
 		result = await provider.createResource({
 			type: meta.type,
 			state: input,
 			idempotantToken,
+		})
+
+		await opt.hooks?.afterResourceCreate?.({
+			urn: resource.urn,
+			type: meta.type,
+			resource,
+			newInput: input,
+			newOutput: result.state,
 		})
 	} catch (error) {
 		// We always need to check if the resource already exists.

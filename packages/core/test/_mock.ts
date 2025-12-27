@@ -10,8 +10,9 @@ import {
 	ResourceNotFound,
 	WorkSpace,
 } from '../src'
+import { Hooks } from '../src/workspace/hooks'
 
-export const createMockProvicer = () => {
+export const createMockProvider = () => {
 	const parseState = (state: unknown) => {
 		if (typeof state === 'object' && state !== null) {
 			return {
@@ -145,11 +146,12 @@ export const Resource = createCustomResourceClass<
 	}
 >('custom', 'resource')
 
-export const createMockWorkSpace = () => {
+export const createMockWorkSpace = (hooks?: Hooks) => {
 	const stateBackend = new MemoryStateBackend()
 	const lockBackend = new MemoryLockBackend()
-	const { provider, store, ...rest } = createMockProvicer()
+	const { provider, store, ...rest } = createMockProvider()
 	const workspace = new WorkSpace({
+		hooks,
 		concurrency: 10,
 		providers: [provider],
 		backend: {

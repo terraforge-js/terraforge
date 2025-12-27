@@ -13,7 +13,8 @@ const debug = createDebugger('Replace')
 export const replaceResource = async (
 	resource: Resource,
 	appToken: UUID,
-	priorState: State,
+	priorInputState: State,
+	priorOutputState: State,
 	proposedState: State,
 	opt: WorkSpaceOptions
 ): Promise<{
@@ -33,10 +34,30 @@ export const replaceResource = async (
 		debug('retain', type)
 	} else {
 		try {
+			// await provider.deleteResource({
+			// 	type,
+			// 	state: priorState,
+			// 	idempotantToken,
+			// })
+
+			await opt.hooks?.beforeResourceDelete?.({
+				urn,
+				type,
+				oldInput: priorInputState,
+				oldOutput: priorOutputState,
+			})
+
 			await provider.deleteResource({
 				type,
-				state: priorState,
+				state: priorOutputState,
 				idempotantToken,
+			})
+
+			await opt.hooks?.afterResourceDelete?.({
+				urn,
+				type,
+				oldInput: priorInputState,
+				oldOutput: priorOutputState,
 			})
 		} catch (error) {
 			if (error instanceof ResourceNotFound) {
@@ -54,10 +75,25 @@ export const replaceResource = async (
 	let result
 
 	try {
+		await opt.hooks?.beforeResourceCreate?.({
+			urn,
+			type,
+			resource,
+			newInput: proposedState,
+		})
+
 		result = await provider.createResource({
 			type,
 			state: proposedState,
 			idempotantToken,
+		})
+
+		await opt.hooks?.afterResourceCreate?.({
+			urn,
+			type,
+			resource,
+			newInput: proposedState,
+			newOutput: result.state,
 		})
 	} catch (error) {
 		throw ResourceError.wrap(urn, type, 'replace', error)

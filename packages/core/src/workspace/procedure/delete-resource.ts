@@ -21,10 +21,24 @@ export const deleteResource = async (appToken: UUID, urn: URN, state: NodeState,
 	const idempotantToken = createIdempotantToken(appToken, urn, 'delete')
 	const provider = findProvider(opt.providers, state.provider)
 	try {
+		await opt.hooks?.beforeResourceDelete?.({
+			urn,
+			type: state.type,
+			oldInput: state.input,
+			oldOutput: state.output,
+		})
+
 		await provider.deleteResource({
 			type: state.type,
 			state: state.output,
 			idempotantToken,
+		})
+
+		await opt.hooks?.afterResourceDelete?.({
+			urn,
+			type: state.type,
+			oldInput: state.input,
+			oldOutput: state.output,
 		})
 	} catch (error) {
 		if (error instanceof ResourceNotFound) {

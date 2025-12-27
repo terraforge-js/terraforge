@@ -247,6 +247,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 								const newResourceState = await updateResource(
 									node,
 									appState.idempotentToken!,
+									importedState.input,
 									importedState.output,
 									input,
 									opt
@@ -287,7 +288,8 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 								newResourceState = await replaceResource(
 									node,
 									appState.idempotentToken!,
-									nodeState.output!,
+									nodeState.input,
+									nodeState.output,
 									input,
 									opt
 								)
@@ -298,7 +300,8 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 								newResourceState = await updateResource(
 									node,
 									appState.idempotentToken!,
-									nodeState.output!,
+									nodeState.input,
+									nodeState.output,
 									input,
 									opt
 								)

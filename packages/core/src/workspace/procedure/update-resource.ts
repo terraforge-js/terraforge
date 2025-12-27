@@ -13,7 +13,8 @@ const debug = createDebugger('Update')
 export const updateResource = async (
 	resource: Resource,
 	appToken: UUID,
-	priorState: State,
+	priorInputState: State,
+	priorOutputState: State,
 	proposedState: State,
 	opt: WorkSpaceOptions
 ): Promise<{
@@ -30,11 +31,30 @@ export const updateResource = async (
 	debug(proposedState)
 
 	try {
+		await opt.hooks?.beforeResourceUpdate?.({
+			urn: resource.urn,
+			type: meta.type,
+			resource,
+			newInput: proposedState,
+			oldInput: priorInputState,
+			oldOutput: priorOutputState,
+		})
+
 		result = await provider.updateResource({
 			type: meta.type,
-			priorState,
+			priorState: priorOutputState,
 			proposedState,
 			idempotantToken,
+		})
+
+		await opt.hooks?.afterResourceUpdate?.({
+			urn: resource.urn,
+			type: meta.type,
+			resource,
+			newInput: proposedState,
+			oldInput: priorInputState,
+			newOutput: result.state,
+			oldOutput: priorOutputState,
 		})
 	} catch (error) {
 		throw ResourceError.wrap(meta.urn, meta.type, 'update', error)
