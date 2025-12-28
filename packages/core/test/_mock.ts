@@ -1,4 +1,5 @@
 import {
+	App,
 	createCustomProvider,
 	createCustomResourceClass,
 	Input,
@@ -12,7 +13,7 @@ import {
 } from '../src'
 import { Hooks } from '../src/workspace/hooks'
 
-export const createMockProvider = () => {
+export const createMockProvider = (config?: { requireReplacement?: boolean }) => {
 	const parseState = (state: unknown) => {
 		if (typeof state === 'object' && state !== null) {
 			return {
@@ -128,6 +129,12 @@ export const createMockProvider = () => {
 
 					store.delete(item.id)
 				},
+				async planResourceChange(props) {
+					return {
+						state: props.proposedState,
+						requiresReplacement: config?.requireReplacement ?? false,
+					}
+				},
 			},
 		}),
 	}
@@ -146,12 +153,27 @@ export const Resource = createCustomResourceClass<
 	}
 >('custom', 'resource')
 
-export const createMockWorkSpace = (hooks?: Hooks) => {
+export const createMockWorkSpace = (config?: { hooks?: Hooks; requireReplacement?: boolean }) => {
+	const logs: string[] = []
 	const stateBackend = new MemoryStateBackend()
 	const lockBackend = new MemoryLockBackend()
-	const { provider, store, ...rest } = createMockProvider()
+	const { provider, store, ...rest } = createMockProvider(config)
 	const workspace = new WorkSpace({
-		hooks,
+		hooks: {
+			...config?.hooks,
+			beforeResourceCreate(event) {
+				logs.push(`create:${event.newInput.id}`)
+				config?.hooks?.beforeResourceCreate?.(event)
+			},
+			beforeResourceUpdate(event) {
+				logs.push(`update:${event.oldInput.id}`)
+				config?.hooks?.beforeResourceUpdate?.(event)
+			},
+			beforeResourceDelete(event) {
+				logs.push(`delete:${event.oldInput.id}`)
+				config?.hooks?.beforeResourceDelete?.(event)
+			},
+		},
 		concurrency: 10,
 		providers: [provider],
 		backend: {
@@ -168,6 +190,7 @@ export const createMockWorkSpace = (hooks?: Hooks) => {
 
 	return {
 		...rest,
+		logs,
 		store,
 		workspace,
 		lockBackend,
@@ -177,6 +200,20 @@ export const createMockWorkSpace = (hooks?: Hooks) => {
 			it('reset', () => {
 				reset()
 			})
+		},
+		async deploy(cb: (app: App) => void) {
+			logs.splice(0, logs.length)
+
+			const app = new App('app')
+			cb(app)
+			await workspace.deploy(app)
+		},
+		async delete(cb?: (app: App) => void) {
+			logs.splice(0, logs.length)
+
+			const app = new App('app')
+			cb?.(app)
+			await workspace.delete(app)
 		},
 	}
 }
