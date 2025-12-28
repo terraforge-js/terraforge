@@ -1,4 +1,5 @@
 import {
+	PlanProps,
 	ResourceNotFound,
 	type CreateProps,
 	type DeleteProps,
@@ -9,6 +10,7 @@ import {
 	type UpdateProps,
 } from '@terraforge/core'
 
+import { version } from 'bun'
 import { Plugin } from './plugin/version/type.ts'
 
 export class TerraformProvider implements Provider {
@@ -120,6 +122,17 @@ export class TerraformProvider implements Provider {
 			} catch (_) {}
 
 			throw error
+		}
+	}
+
+	async planResourceChange({ type, priorState, proposedState }: PlanProps) {
+		const plugin = await this.configure()
+		const result = await plugin.planResourceChange(type, priorState, proposedState)
+
+		return {
+			version: 0,
+			requiresReplacement: result.requiresReplace.length > 0,
+			state: result.plannedState,
 		}
 	}
 

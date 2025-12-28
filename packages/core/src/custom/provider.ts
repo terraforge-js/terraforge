@@ -1,5 +1,5 @@
 import { State } from '../meta'
-import { CreateProps, DeleteProps, GetDataProps, GetProps, Provider, UpdateProps } from '../provider'
+import { CreateProps, DeleteProps, GetDataProps, GetProps, PlanProps, Provider, UpdateProps } from '../provider'
 
 export type CustomResourceProvider = Partial<{
 	getResource?(props: Omit<GetProps, 'type'>): Promise<State>
@@ -7,6 +7,10 @@ export type CustomResourceProvider = Partial<{
 	createResource?(props: Omit<CreateProps, 'type'>): Promise<State>
 	deleteResource?(props: Omit<DeleteProps, 'type'>): Promise<void>
 	getData?(props: Omit<GetDataProps, 'type'>): Promise<State>
+	planResourceChange?(props: Omit<PlanProps, 'type'>): Promise<{
+		state: State
+		requiresReplacement: boolean
+	}>
 }>
 
 export const createCustomProvider = (
@@ -75,6 +79,24 @@ export const createCustomProvider = (
 		},
 		async deleteResource({ type, ...props }) {
 			await getProvider(type).deleteResource?.(props)
+		},
+		async planResourceChange({ type, ...props }) {
+			const provider = getProvider(type)
+
+			if (!provider.planResourceChange) {
+				return {
+					version,
+					state: props.proposedState,
+					requiresReplacement: false,
+				}
+			}
+
+			const result = await provider.planResourceChange(props)
+
+			return {
+				version,
+				...result,
+			}
 		},
 		async getData({ type, ...props }) {
 			return {

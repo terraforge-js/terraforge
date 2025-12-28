@@ -90,6 +90,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 			for (const node of stack.nodes) {
 				const meta = getMeta(node)
 				const nodeState = stackState.nodes[meta.urn]
+
 				if (nodeState && nodeState.output) {
 					graph.add(meta.urn, [], async () => {
 						debug('hydrate', meta.urn)

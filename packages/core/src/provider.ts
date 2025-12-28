@@ -8,7 +8,6 @@ export type CreateProps<T = State> = {
 }
 
 export type UpdateProps<T = State> = {
-	// id?: string;
 	type: string
 	priorState: T
 	proposedState: T
@@ -17,15 +16,19 @@ export type UpdateProps<T = State> = {
 }
 
 export type DeleteProps<T = State> = {
-	// id?: string;
 	type: string
 	state: T
 
 	idempotantToken?: string
 }
 
+export type PlanProps<T = State> = {
+	type: string
+	priorState: T
+	proposedState: T
+}
+
 export type GetProps<T = State> = {
-	// id?: string;
 	type: string
 	state: T
 }
@@ -54,6 +57,12 @@ export interface Provider {
 	}>
 
 	deleteResource(props: DeleteProps): Promise<void>
+
+	planResourceChange?(props: PlanProps): Promise<{
+		version: number
+		state: State
+		requiresReplacement: boolean
+	}>
 
 	getData?(props: GetDataProps): Promise<{
 		state: State
