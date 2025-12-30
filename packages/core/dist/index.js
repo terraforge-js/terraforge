@@ -479,6 +479,89 @@ var dependentsOn = (resources, dependency) => {
   }
   return dependents;
 };
+var findDependencyPaths = (value, dependencyUrn, path = []) => {
+  const paths = [];
+  const visit = (current, currentPath) => {
+    if (current instanceof Output) {
+      for (const dep of current.dependencies) {
+        if (dep.urn === dependencyUrn) {
+          paths.push(currentPath);
+          return;
+        }
+      }
+      return;
+    }
+    if (Array.isArray(current)) {
+      current.forEach((item, index) => {
+        visit(item, [...currentPath, index]);
+      });
+      return;
+    }
+    if (current && typeof current === "object") {
+      for (const [key, item] of Object.entries(current)) {
+        visit(item, [...currentPath, key]);
+      }
+    }
+  };
+  visit(value, path);
+  return paths;
+};
+var cloneState = (value) => JSON.parse(JSON.stringify(value));
+var removeAtPath = (target, path) => {
+  if (path.length === 0) return;
+  let parent = target;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (parent == null) return;
+    parent = parent[path[i]];
+  }
+  const last = path[path.length - 1];
+  if (Array.isArray(parent) && typeof last === "number") {
+    if (last >= 0 && last < parent.length) {
+      parent.splice(last, 1);
+    }
+    return;
+  }
+  if (parent && typeof parent === "object") {
+    delete parent[last];
+  }
+};
+var stripDependencyInputs = (input, metaInput, dependencyUrn) => {
+  const paths = findDependencyPaths(metaInput, dependencyUrn);
+  if (paths.length === 0) {
+    return input;
+  }
+  const detached = cloneState(input);
+  const sortedPaths = [...paths].sort((a, b) => {
+    if (a.length !== b.length) return b.length - a.length;
+    const aLast = a[a.length - 1];
+    const bLast = b[b.length - 1];
+    if (typeof aLast === "number" && typeof bLast === "number") {
+      return bLast - aLast;
+    }
+    return 0;
+  });
+  for (const path of sortedPaths) {
+    removeAtPath(detached, path);
+  }
+  return detached;
+};
+var allowsDependentReplace = (replaceOnChanges, dependencyPaths) => {
+  if (!replaceOnChanges || replaceOnChanges.length === 0) {
+    return false;
+  }
+  for (const path of dependencyPaths) {
+    const base = typeof path[0] === "string" ? path[0] : void 0;
+    if (!base) {
+      continue;
+    }
+    for (const replacePath of replaceOnChanges) {
+      if (replacePath === base || replacePath.startsWith(`${base}.`) || replacePath.startsWith(`${base}[`) || replacePath.startsWith(`${base}.*`)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
 
 // src/workspace/error.ts
 var ResourceError = class _ResourceError extends Error {
@@ -912,89 +995,6 @@ var updateResource = async (resource, appToken, priorInputState, priorOutputStat
 
 // src/workspace/procedure/deploy-app.ts
 var debug7 = createDebugger("Deploy App");
-var findDependencyPaths = (value, dependencyUrn, path = []) => {
-  const paths = [];
-  const visit = (current, currentPath) => {
-    if (current instanceof Output) {
-      for (const dep of current.dependencies) {
-        if (dep.urn === dependencyUrn) {
-          paths.push(currentPath);
-          return;
-        }
-      }
-      return;
-    }
-    if (Array.isArray(current)) {
-      current.forEach((item, index) => {
-        visit(item, [...currentPath, index]);
-      });
-      return;
-    }
-    if (current && typeof current === "object") {
-      for (const [key, item] of Object.entries(current)) {
-        visit(item, [...currentPath, key]);
-      }
-    }
-  };
-  visit(value, path);
-  return paths;
-};
-var cloneState = (value) => JSON.parse(JSON.stringify(value));
-var removeAtPath = (target, path) => {
-  if (path.length === 0) return;
-  let parent = target;
-  for (let i = 0; i < path.length - 1; i++) {
-    if (parent == null) return;
-    parent = parent[path[i]];
-  }
-  const last = path[path.length - 1];
-  if (Array.isArray(parent) && typeof last === "number") {
-    if (last >= 0 && last < parent.length) {
-      parent.splice(last, 1);
-    }
-    return;
-  }
-  if (parent && typeof parent === "object") {
-    delete parent[last];
-  }
-};
-var stripDependencyInputs = (input, metaInput, dependencyUrn) => {
-  const paths = findDependencyPaths(metaInput, dependencyUrn);
-  if (paths.length === 0) {
-    return input;
-  }
-  const detached = cloneState(input);
-  const sortedPaths = [...paths].sort((a, b) => {
-    if (a.length !== b.length) return b.length - a.length;
-    const aLast = a[a.length - 1];
-    const bLast = b[b.length - 1];
-    if (typeof aLast === "number" && typeof bLast === "number") {
-      return bLast - aLast;
-    }
-    return 0;
-  });
-  for (const path of sortedPaths) {
-    removeAtPath(detached, path);
-  }
-  return detached;
-};
-var allowsDependentReplace = (replaceOnChanges, dependencyPaths) => {
-  if (!replaceOnChanges || replaceOnChanges.length === 0) {
-    return false;
-  }
-  for (const path of dependencyPaths) {
-    const base = typeof path[0] === "string" ? path[0] : void 0;
-    if (!base) {
-      continue;
-    }
-    for (const replacePath of replaceOnChanges) {
-      if (replacePath === base || replacePath.startsWith(`${base}.`) || replacePath.startsWith(`${base}[`) || replacePath.startsWith(`${base}.*`)) {
-        return true;
-      }
-    }
-  }
-  return false;
-};
 var deployApp = async (app, opt) => {
   debug7(app.name, "start");
   const latestState = await opt.backend.state.get(app.urn);
