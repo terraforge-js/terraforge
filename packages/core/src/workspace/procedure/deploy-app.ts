@@ -1,11 +1,18 @@
 import { App } from '../../app.ts'
 import { createDebugger } from '../../debug.ts'
 import { resolveInputs } from '../../input.ts'
-import { getMeta, isDataSource, isResource } from '../../node.ts'
+import { getMeta, isDataSource, isResource, type Node } from '../../node.ts'
+import { findProvider } from '../../provider.ts'
 import { Stack } from '../../stack.ts'
 import { URN } from '../../urn.ts'
 import { createConcurrencyQueue } from '../concurrency.ts'
-import { DependencyGraph, dependentsOn } from '../dependency.ts'
+import {
+	allowsDependentReplace,
+	DependencyGraph,
+	dependentsOn,
+	findDependencyPaths,
+	stripDependencyInputs,
+} from '../dependency.ts'
 import { entries } from '../entries.ts'
 import { AppError, ResourceError } from '../error.ts'
 import { onExit } from '../exit.ts'
@@ -64,11 +71,35 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 		filteredOutStacks = app.stacks.filter(stack => !opt.filters!.includes(stack.name))
 	}
 
+	// -------------------------------------------------------------------
+	// Cache nodes and stack state for dependent planning inside replace.
+
+	const nodeByUrn = new Map<URN, Node>()
+	const stackStates = new Map<URN, StackState>()
+	const plannedDependents = new Set<URN>()
+	const forcedUpdateDependents = new Set<URN>()
+
+	for (const stack of stacks) {
+		const stackState = (appState.stacks[stack.urn] =
+			appState.stacks[stack.urn] ??
+			({
+				name: stack.name,
+				nodes: {},
+			} satisfies StackState))
+
+		stackStates.set(stack.urn, stackState)
+
+		for (const node of stack.nodes) {
+			nodeByUrn.set(getMeta(node).urn, node)
+		}
+	}
+
 	// -------------------------------------------------------
 	// Build deployment graph
 
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 	const graph = new DependencyGraph()
+	const replacementDeletes = new Map<URN, NodeState>()
 
 	// -------------------------------------------------------
 
@@ -136,15 +167,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	// Sync the stacks that still exist
 
 	for (const stack of stacks) {
-		// -------------------------------------------------------------------
-		// Get or create the stack state
-
-		const stackState = (appState.stacks[stack.urn] =
-			appState.stacks[stack.urn] ??
-			({
-				name: stack.name,
-				nodes: {},
-			} satisfies StackState))
+		const stackState = stackStates.get(stack.urn)!
 
 		// -------------------------------------------------------------------
 		// Delete resources that no longer exist in the stack
@@ -282,18 +305,139 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 						) {
 							let newResourceState
 
-							if (requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])) {
-								// --------------------------------------------------
-								// Replace resource
+							// Dependent updates may be forced to detach/reattach during replacements.
+							const ignoreReplace = forcedUpdateDependents.has(meta.urn)
 
-								newResourceState = await replaceResource(
-									node,
-									appState.idempotentToken!,
-									nodeState.input,
-									nodeState.output,
-									input,
-									opt
-								)
+							if (
+								!ignoreReplace &&
+								requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])
+							) {
+								// --------------------------------------------------
+								// Replace resource (optionally create before delete).
+
+								if (meta.config?.createBeforeReplace) {
+									// Create new output first; delete old output after dependents update.
+									const priorState = { ...nodeState }
+									newResourceState = await createResource(node, appState.idempotentToken!, input, opt)
+
+									if (!meta.config?.retainOnDelete) {
+										replacementDeletes.set(meta.urn, priorState)
+									}
+								} else {
+									// Replace resource while safely detaching dependents first.
+									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+										if (!isResource(dependentNode)) {
+											continue
+										}
+
+										const dependentMeta = getMeta(dependentNode)
+										if (!dependentMeta.dependencies.has(meta.urn)) {
+											continue
+										}
+
+										if (plannedDependents.has(dependentUrn)) {
+											continue
+										}
+
+										const dependentStackState = stackStates.get(dependentMeta.stack.urn)
+										const dependentState = dependentStackState?.nodes[dependentUrn]
+										if (!dependentStackState || !dependentState) {
+											continue
+										}
+
+										// Only operate on inputs that actually reference this dependency.
+										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
+										if (dependencyPaths.length === 0) {
+											continue
+										}
+
+										// Detach dependency references before deleting the old dependency.
+										const detachedInput = stripDependencyInputs(
+											dependentState.input,
+											dependentMeta.input,
+											meta.urn
+										)
+
+										if (compareState(dependentState.input, detachedInput)) {
+											continue
+										}
+
+										plannedDependents.add(dependentUrn)
+
+										let dependentRequiresReplacement = false
+										const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
+										if (dependentProvider.planResourceChange) {
+											try {
+												const dependentPlan = await dependentProvider.planResourceChange({
+													type: dependentMeta.type,
+													priorState: dependentState.output,
+													proposedState: detachedInput,
+												})
+												dependentRequiresReplacement = dependentPlan.requiresReplacement
+											} catch (error) {
+												throw ResourceError.wrap(
+													dependentMeta.urn,
+													dependentMeta.type,
+													'update',
+													error
+												)
+											}
+										}
+
+										if (dependentRequiresReplacement) {
+											// If a dependent can't be updated, it must be deleted/recreated.
+											if (
+												!allowsDependentReplace(
+													dependentMeta.config?.replaceOnChanges,
+													dependencyPaths
+												)
+											) {
+												throw ResourceError.wrap(
+													dependentMeta.urn,
+													dependentMeta.type,
+													'update',
+													new Error(
+														`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+													)
+												)
+											}
+
+											await deleteResource(
+												appState.idempotentToken!,
+												dependentUrn,
+												dependentState,
+												opt
+											)
+											delete dependentStackState.nodes[dependentUrn]
+										} else {
+											// Update dependents to detach now and reattach later.
+											const updated = await updateResource(
+												dependentNode,
+												appState.idempotentToken!,
+												dependentState.input,
+												dependentState.output,
+												detachedInput,
+												opt
+											)
+
+											Object.assign(dependentState, {
+												input: detachedInput,
+												...updated,
+											})
+
+											forcedUpdateDependents.add(dependentUrn)
+										}
+									}
+
+									newResourceState = await replaceResource(
+										node,
+										appState.idempotentToken!,
+										nodeState.input,
+										nodeState.output,
+										input,
+										opt
+									)
+								}
 							} else {
 								// --------------------------------------------------
 								// Update resource
@@ -306,6 +450,10 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									input,
 									opt
 								)
+
+								if (ignoreReplace) {
+									forcedUpdateDependents.delete(meta.urn)
+								}
 							}
 
 							Object.assign(nodeState, {
@@ -333,6 +481,20 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	// Execute deployment graph
 
 	const errors = await graph.run()
+
+	if (errors.length === 0 && replacementDeletes.size > 0) {
+		for (const [urn, nodeState] of replacementDeletes.entries()) {
+			try {
+				await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
+			} catch (error) {
+				if (error instanceof Error) {
+					errors.push(error)
+				} else {
+					errors.push(new Error(`${error}`))
+				}
+			}
+		}
+	}
 
 	// -------------------------------------------------------------------
 	// Remove empty stacks from app state

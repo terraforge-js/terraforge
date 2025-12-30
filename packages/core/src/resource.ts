@@ -15,11 +15,8 @@ export type ResourceConfig = Config & {
 	/** Import an existing resource instead of creating a new resource. */
 	import?: string
 
-	/** If true the resource will be retained in the backing cloud provider during a Pulumi delete operation. */
+	/** If true the resource will be retained in the backing cloud provider during a delete operation. */
 	retainOnDelete?: boolean
-
-	/** Override the default create-after-delete behavior when replacing a resource. */
-	// deleteAfterCreate?: boolean
 
 	/** If set, the provider’s Delete method will not be called for this resource if the specified resource is being deleted as well. */
 	// deletedWith?: Resource;
@@ -27,20 +24,23 @@ export type ResourceConfig = Config & {
 	/** Declare that changes to certain properties should be treated as forcing a replacement. */
 	replaceOnChanges?: string[]
 
+	/** If true, create the replacement before deleting the existing resource. */
+	createBeforeReplace?: boolean
+
 	/** Declare that changes to certain properties should be ignored during a diff. */
 	// ignoreChanges?: string[];
 }
 
-export type ResourceMeta<I extends State = State, O extends State = State> = Meta<'resource', I, O, ResourceConfig>
+export type ResourceMeta = Meta<'resource', ResourceConfig>
 
-export type Resource<I extends State = State, O extends State = State> = O & {
-	readonly [nodeMetaSymbol]: ResourceMeta<I, O>
+export type Resource<O extends State = State> = O & {
+	readonly [nodeMetaSymbol]: ResourceMeta
 	readonly urn: URN
 }
 
 export type ResourceClass<I extends State = State, O extends State = State> = {
-	new (parent: Group, id: string, props: I, config?: ResourceConfig): Resource<I, O>
-	get(parent: Group, id: string, physicalId: string): DataSource<I, O>
+	new (parent: Group, id: string, props: I, config?: ResourceConfig): Resource<O>
+	get(parent: Group, id: string, physicalId: string): DataSource<O>
 }
 
 // export const createUrn = (type: string, name: string, parentUrn?: URN): URN => {

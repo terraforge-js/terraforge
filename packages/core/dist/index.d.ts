@@ -42,8 +42,8 @@ declare const interpolate: (literals: TemplateStringsArray, ...placeholders: Inp
 type URN = `urn:${string}`;
 
 declare const nodeMetaSymbol: unique symbol;
-type Node<T extends Tag = Tag, I extends State = State, O extends State = any, C extends Config = Config> = {
-    readonly [nodeMetaSymbol]: Meta<T, I, O, C>;
+type Node<T extends Tag = Tag, O extends State = State> = {
+    readonly [nodeMetaSymbol]: Meta<T>;
     readonly urn: URN;
 } & O;
 declare const isNode: (obj: object) => obj is {
@@ -58,21 +58,22 @@ declare const isDataSource: (obj: object) => obj is DataSource;
 type ResourceConfig = Config & {
     /** Import an existing resource instead of creating a new resource. */
     import?: string;
-    /** If true the resource will be retained in the backing cloud provider during a Pulumi delete operation. */
+    /** If true the resource will be retained in the backing cloud provider during a delete operation. */
     retainOnDelete?: boolean;
-    /** Override the default create-after-delete behavior when replacing a resource. */
     /** If set, the provider’s Delete method will not be called for this resource if the specified resource is being deleted as well. */
     /** Declare that changes to certain properties should be treated as forcing a replacement. */
     replaceOnChanges?: string[];
+    /** If true, create the replacement before deleting the existing resource. */
+    createBeforeReplace?: boolean;
 };
-type ResourceMeta<I extends State = State, O extends State = State> = Meta<'resource', I, O, ResourceConfig>;
-type Resource<I extends State = State, O extends State = State> = O & {
-    readonly [nodeMetaSymbol]: ResourceMeta<I, O>;
+type ResourceMeta = Meta<'resource', ResourceConfig>;
+type Resource<O extends State = State> = O & {
+    readonly [nodeMetaSymbol]: ResourceMeta;
     readonly urn: URN;
 };
 type ResourceClass<I extends State = State, O extends State = State> = {
-    new (parent: Group, id: string, props: I, config?: ResourceConfig): Resource<I, O>;
-    get(parent: Group, id: string, physicalId: string): DataSource<I, O>;
+    new (parent: Group, id: string, props: I, config?: ResourceConfig): Resource<O>;
+    get(parent: Group, id: string, physicalId: string): DataSource<O>;
 };
 
 declare class Stack extends Group {
@@ -86,31 +87,31 @@ type Tag = 'resource' | 'data';
 type State = Record<string, unknown>;
 type Config = {
     /** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
-    dependsOn?: Resource<any, any>[];
+    dependsOn?: Resource[];
     /** Pass an ID of an explicitly configured provider, instead of using the default provider. */
     provider?: string;
 };
-type Meta<T extends Tag = Tag, I extends State = State, O extends State = State, C extends Config = Config> = {
+type Meta<T extends Tag = Tag, C extends Config = Config> = {
     readonly tag: T;
     readonly urn: URN;
     readonly logicalId: string;
     readonly type: string;
     readonly stack: Stack;
     readonly provider: string;
-    readonly input: I;
+    readonly input: State;
     readonly config?: C;
     readonly dependencies: Set<URN>;
-    readonly resolve: (data: O) => void;
-    readonly output: <O>(cb: (data: State) => O) => Output<O>;
+    readonly resolve: (data: State) => void;
+    readonly output: <V>(cb: (data: State) => V) => Output<V>;
 };
-declare const createMeta: <T extends Tag = Tag, I extends State = State, O extends State = State, C extends Config = Config>(tag: T, provider: string, parent: Group, type: string, logicalId: string, input: I, config?: C) => Meta<T, I, O, C>;
+declare const createMeta: <T extends Tag = Tag, C extends Config = Config>(tag: T, provider: string, parent: Group, type: string, logicalId: string, input: State, config?: C) => Meta<T, C>;
 
-type DataSourceMeta<I extends State = State, O extends State = State> = Meta<'data', I, O>;
-type DataSource<I extends State = State, O extends State = State> = {
-    readonly [nodeMetaSymbol]: DataSourceMeta<I, O>;
+type DataSourceMeta = Meta<'data'>;
+type DataSource<O extends State = State> = {
+    readonly [nodeMetaSymbol]: DataSourceMeta;
     readonly urn: URN;
 } & O;
-type DataSourceFunction<I extends State = State, O extends State = State> = (parent: Group, id: string, input: I, config?: Config) => DataSource<I, O>;
+type DataSourceFunction<I extends State = State, O extends State = State> = (parent: Group, id: string, input: I, config?: Config) => DataSource<O>;
 
 declare class Group {
     readonly parent: Group | undefined;
@@ -187,6 +188,11 @@ type DeleteProps<T = State> = {
     state: T;
     idempotantToken?: string;
 };
+type PlanProps<T = State> = {
+    type: string;
+    priorState: T;
+    proposedState: T;
+};
 type GetProps<T = State> = {
     type: string;
     state: T;
@@ -210,11 +216,59 @@ interface Provider {
         state: State;
     }>;
     deleteResource(props: DeleteProps): Promise<void>;
+    planResourceChange?(props: PlanProps): Promise<{
+        version: number;
+        state: State;
+        requiresReplacement: boolean;
+    }>;
     getData?(props: GetDataProps): Promise<{
         state: State;
     }>;
     destroy?(): Promise<void>;
 }
+
+type ResourceEvent = {
+    urn: URN;
+    type: string;
+};
+type BeforeResourceCreateEvent = ResourceEvent & {
+    resource: Resource;
+    newInput: State;
+};
+type AfterResourceCreateEvent = ResourceEvent & {
+    resource: Resource;
+    newInput: State;
+    newOutput: State;
+};
+type BeforeResourceUpdateEvent = ResourceEvent & {
+    resource: Resource;
+    oldInput: State;
+    newInput: State;
+    oldOutput: State;
+};
+type AfterResourceUpdateEvent = ResourceEvent & {
+    resource: Resource;
+    oldInput: State;
+    newInput: State;
+    oldOutput: State;
+    newOutput: State;
+};
+type BeforeResourceDeleteEvent = ResourceEvent & {
+    oldInput: State;
+    oldOutput: State;
+};
+type AfterResourceDeleteEvent = ResourceEvent & {
+    oldInput: State;
+    oldOutput: State;
+};
+type Hooks = {
+    beforeResourceCreate?: (event: BeforeResourceCreateEvent) => Promise<void> | void;
+    beforeResourceUpdate?: (event: BeforeResourceUpdateEvent) => Promise<void> | void;
+    beforeResourceDelete?: (event: BeforeResourceDeleteEvent) => Promise<void> | void;
+    afterResourceCreate?: (event: AfterResourceCreateEvent) => Promise<void> | void;
+    afterResourceUpdate?: (event: AfterResourceUpdateEvent) => Promise<void> | void;
+    afterResourceDelete?: (event: AfterResourceDeleteEvent) => Promise<void> | void;
+};
 
 type ProcedureOptions = {
     filters?: string[];
@@ -227,6 +281,7 @@ type WorkSpaceOptions = {
         state: StateBackend;
         lock: LockBackend;
     };
+    hooks?: Hooks;
 };
 declare class WorkSpace {
     protected props: WorkSpaceOptions;
@@ -356,7 +411,11 @@ type CustomResourceProvider = Partial<{
     createResource?(props: Omit<CreateProps, 'type'>): Promise<State>;
     deleteResource?(props: Omit<DeleteProps, 'type'>): Promise<void>;
     getData?(props: Omit<GetDataProps, 'type'>): Promise<State>;
+    planResourceChange?(props: Omit<PlanProps, 'type'>): Promise<{
+        state: State;
+        requiresReplacement: boolean;
+    }>;
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 
-export { App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, type LockBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, S3StateBackend, Stack, type State, type StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, type LockBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, S3StateBackend, Stack, type State, type StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

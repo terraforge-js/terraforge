@@ -10,7 +10,6 @@ import {
 	type UpdateProps,
 } from '@terraforge/core'
 
-import { version } from 'bun'
 import { Plugin } from './plugin/version/type.ts'
 
 export class TerraformProvider implements Provider {

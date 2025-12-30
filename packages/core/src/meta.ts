@@ -1,6 +1,7 @@
 // import { type DataSource } from './data-source.ts'
 import { Group } from './group.ts'
 import { findInputDeps } from './input.ts'
+import { getMeta } from './node.ts'
 import { Output } from './output.ts'
 import { type Resource } from './resource.ts'
 import { findParentStack, Stack } from './stack.ts'
@@ -23,51 +24,46 @@ export type State = Record<string, unknown>
 
 export type Config = {
 	/** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
-	dependsOn?: Resource<any, any>[]
+	dependsOn?: Resource[]
 
 	/** Pass an ID of an explicitly configured provider, instead of using the default provider. */
 	provider?: string
 }
 
-export type Meta<T extends Tag = Tag, I extends State = State, O extends State = State, C extends Config = Config> = {
+export type Meta<T extends Tag = Tag, C extends Config = Config> = {
 	readonly tag: T
 	readonly urn: URN
 	readonly logicalId: string
 	readonly type: string
 	readonly stack: Stack
 	readonly provider: string
-	readonly input: I
+	readonly input: State
 	readonly config?: C
 	readonly dependencies: Set<URN>
 
 	// readonly attach: (resource: Resource<I, O, T>) => void
 	// readonly attachDependencies: (props: unknown) => void
-	readonly resolve: (data: O) => void
-	readonly output: <O>(cb: (data: State) => O) => Output<O>
+	readonly resolve: (data: State) => void
+	readonly output: <V>(cb: (data: State) => V) => Output<V>
 }
 
 // export type Node<T extends Tag = Tag, I extends State = State, O extends State = State, C extends Config = Config> = {
 // 	$: Meta<T, I, O, C>
 // } & O
 
-export const createMeta = <
-	T extends Tag = Tag,
-	I extends State = State,
-	O extends State = State,
-	C extends Config = Config,
->(
+export const createMeta = <T extends Tag = Tag, C extends Config = Config>(
 	tag: T,
 	provider: string,
 	parent: Group,
 	type: string,
 	logicalId: string,
-	input: I,
+	input: State,
 	config?: C
-): Meta<T, I, O, C> => {
+): Meta<T, C> => {
 	const urn = createUrn(tag, type, logicalId, parent.urn)
 	const stack = findParentStack(parent)
 
-	let output: O | undefined
+	let output: State | undefined
 
 	return {
 		tag,
@@ -91,8 +87,9 @@ export const createMeta = <
 			for (const dep of findInputDeps(input)) {
 				linkMetaDep(dep)
 			}
+
 			for (const dep of config?.dependsOn ?? []) {
-				linkMetaDep(dep.$)
+				linkMetaDep(getMeta(dep))
 
 				// if (dep.$.stack.urn === stack.urn) {
 				// 	dependencies.add(dep.$.urn)
@@ -100,6 +97,7 @@ export const createMeta = <
 				// 	stack.dependsOn(dep.$.stack)
 				// }
 			}
+
 			return dependencies
 		},
 		// attach(value) {

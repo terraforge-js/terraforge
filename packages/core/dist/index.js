@@ -307,7 +307,7 @@ var createMeta = (tag, provider, parent, type, logicalId, input, config) => {
         linkMetaDep(dep);
       }
       for (const dep of config?.dependsOn ?? []) {
-        linkMetaDep(dep.$);
+        linkMetaDep(getMeta(dep));
       }
       return dependencies;
     },
@@ -420,6 +420,9 @@ var DependencyGraph = class {
     this.callbacks.set(urn, callback);
     this.graph.mergeNode(urn);
     for (const dep of deps) {
+      if (!dep) {
+        throw new Error(`Resource ${urn} has an undefined dependency.`);
+      }
       if (willCreateCycle(this.graph, dep, urn)) {
         throw new Error(`There is a circular dependency between ${urn} -> ${dep}`);
       }
@@ -610,10 +613,22 @@ var deleteResource = async (appToken, urn, state, opt) => {
   const idempotantToken = createIdempotantToken(appToken, urn, "delete");
   const provider = findProvider(opt.providers, state.provider);
   try {
+    await opt.hooks?.beforeResourceDelete?.({
+      urn,
+      type: state.type,
+      oldInput: state.input,
+      oldOutput: state.output
+    });
     await provider.deleteResource({
       type: state.type,
       state: state.output,
       idempotantToken
+    });
+    await opt.hooks?.afterResourceDelete?.({
+      urn,
+      type: state.type,
+      oldInput: state.input,
+      oldOutput: state.output
     });
   } catch (error) {
     if (error instanceof ResourceNotFound) {
@@ -699,10 +714,23 @@ var createResource = async (resource, appToken, input, opt) => {
   debug2(input);
   let result;
   try {
+    await opt.hooks?.beforeResourceCreate?.({
+      urn: resource.urn,
+      type: meta.type,
+      resource,
+      newInput: input
+    });
     result = await provider.createResource({
       type: meta.type,
       state: input,
       idempotantToken
+    });
+    await opt.hooks?.afterResourceCreate?.({
+      urn: resource.urn,
+      type: meta.type,
+      resource,
+      newInput: input,
+      newOutput: result.state
     });
   } catch (error) {
     throw ResourceError.wrap(meta.urn, meta.type, "create", error);
@@ -774,7 +802,7 @@ var importResource = async (resource, input, opt) => {
 
 // src/workspace/procedure/replace-resource.ts
 var debug5 = createDebugger("Replace");
-var replaceResource = async (resource, appToken, priorState, proposedState, opt) => {
+var replaceResource = async (resource, appToken, priorInputState, priorOutputState, proposedState, opt) => {
   const meta = getMeta(resource);
   const urn = meta.urn;
   const type = meta.type;
@@ -786,10 +814,22 @@ var replaceResource = async (resource, appToken, priorState, proposedState, opt)
     debug5("retain", type);
   } else {
     try {
+      await opt.hooks?.beforeResourceDelete?.({
+        urn,
+        type,
+        oldInput: priorInputState,
+        oldOutput: priorOutputState
+      });
       await provider.deleteResource({
         type,
-        state: priorState,
+        state: priorOutputState,
         idempotantToken
+      });
+      await opt.hooks?.afterResourceDelete?.({
+        urn,
+        type,
+        oldInput: priorInputState,
+        oldOutput: priorOutputState
       });
     } catch (error) {
       if (error instanceof ResourceNotFound) {
@@ -801,10 +841,23 @@ var replaceResource = async (resource, appToken, priorState, proposedState, opt)
   }
   let result;
   try {
+    await opt.hooks?.beforeResourceCreate?.({
+      urn,
+      type,
+      resource,
+      newInput: proposedState
+    });
     result = await provider.createResource({
       type,
       state: proposedState,
       idempotantToken
+    });
+    await opt.hooks?.afterResourceCreate?.({
+      urn,
+      type,
+      resource,
+      newInput: proposedState,
+      newOutput: result.state
     });
   } catch (error) {
     throw ResourceError.wrap(urn, type, "replace", error);
@@ -817,7 +870,7 @@ var replaceResource = async (resource, appToken, priorState, proposedState, opt)
 
 // src/workspace/procedure/update-resource.ts
 var debug6 = createDebugger("Update");
-var updateResource = async (resource, appToken, priorState, proposedState, opt) => {
+var updateResource = async (resource, appToken, priorInputState, priorOutputState, proposedState, opt) => {
   const meta = getMeta(resource);
   const provider = findProvider(opt.providers, meta.provider);
   const idempotantToken = createIdempotantToken(appToken, meta.urn, "update");
@@ -825,11 +878,28 @@ var updateResource = async (resource, appToken, priorState, proposedState, opt) 
   debug6(meta.type);
   debug6(proposedState);
   try {
+    await opt.hooks?.beforeResourceUpdate?.({
+      urn: resource.urn,
+      type: meta.type,
+      resource,
+      newInput: proposedState,
+      oldInput: priorInputState,
+      oldOutput: priorOutputState
+    });
     result = await provider.updateResource({
       type: meta.type,
-      priorState,
+      priorState: priorOutputState,
       proposedState,
       idempotantToken
+    });
+    await opt.hooks?.afterResourceUpdate?.({
+      urn: resource.urn,
+      type: meta.type,
+      resource,
+      newInput: proposedState,
+      oldInput: priorInputState,
+      newOutput: result.state,
+      oldOutput: priorOutputState
     });
   } catch (error) {
     throw ResourceError.wrap(meta.urn, meta.type, "update", error);
@@ -842,6 +912,89 @@ var updateResource = async (resource, appToken, priorState, proposedState, opt) 
 
 // src/workspace/procedure/deploy-app.ts
 var debug7 = createDebugger("Deploy App");
+var findDependencyPaths = (value, dependencyUrn, path = []) => {
+  const paths = [];
+  const visit = (current, currentPath) => {
+    if (current instanceof Output) {
+      for (const dep of current.dependencies) {
+        if (dep.urn === dependencyUrn) {
+          paths.push(currentPath);
+          return;
+        }
+      }
+      return;
+    }
+    if (Array.isArray(current)) {
+      current.forEach((item, index) => {
+        visit(item, [...currentPath, index]);
+      });
+      return;
+    }
+    if (current && typeof current === "object") {
+      for (const [key, item] of Object.entries(current)) {
+        visit(item, [...currentPath, key]);
+      }
+    }
+  };
+  visit(value, path);
+  return paths;
+};
+var cloneState = (value) => JSON.parse(JSON.stringify(value));
+var removeAtPath = (target, path) => {
+  if (path.length === 0) return;
+  let parent = target;
+  for (let i = 0; i < path.length - 1; i++) {
+    if (parent == null) return;
+    parent = parent[path[i]];
+  }
+  const last = path[path.length - 1];
+  if (Array.isArray(parent) && typeof last === "number") {
+    if (last >= 0 && last < parent.length) {
+      parent.splice(last, 1);
+    }
+    return;
+  }
+  if (parent && typeof parent === "object") {
+    delete parent[last];
+  }
+};
+var stripDependencyInputs = (input, metaInput, dependencyUrn) => {
+  const paths = findDependencyPaths(metaInput, dependencyUrn);
+  if (paths.length === 0) {
+    return input;
+  }
+  const detached = cloneState(input);
+  const sortedPaths = [...paths].sort((a, b) => {
+    if (a.length !== b.length) return b.length - a.length;
+    const aLast = a[a.length - 1];
+    const bLast = b[b.length - 1];
+    if (typeof aLast === "number" && typeof bLast === "number") {
+      return bLast - aLast;
+    }
+    return 0;
+  });
+  for (const path of sortedPaths) {
+    removeAtPath(detached, path);
+  }
+  return detached;
+};
+var allowsDependentReplace = (replaceOnChanges, dependencyPaths) => {
+  if (!replaceOnChanges || replaceOnChanges.length === 0) {
+    return false;
+  }
+  for (const path of dependencyPaths) {
+    const base = typeof path[0] === "string" ? path[0] : void 0;
+    if (!base) {
+      continue;
+    }
+    for (const replacePath of replaceOnChanges) {
+      if (replacePath === base || replacePath.startsWith(`${base}.`) || replacePath.startsWith(`${base}[`) || replacePath.startsWith(`${base}.*`)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
 var deployApp = async (app, opt) => {
   debug7(app.name, "start");
   const latestState = await opt.backend.state.get(app.urn);
@@ -864,8 +1017,23 @@ var deployApp = async (app, opt) => {
     stacks = app.stacks.filter((stack) => opt.filters.includes(stack.name));
     filteredOutStacks = app.stacks.filter((stack) => !opt.filters.includes(stack.name));
   }
+  const nodeByUrn = /* @__PURE__ */ new Map();
+  const stackStates = /* @__PURE__ */ new Map();
+  const plannedDependents = /* @__PURE__ */ new Set();
+  const forcedUpdateDependents = /* @__PURE__ */ new Set();
+  for (const stack of stacks) {
+    const stackState = appState.stacks[stack.urn] = appState.stacks[stack.urn] ?? {
+      name: stack.name,
+      nodes: {}
+    };
+    stackStates.set(stack.urn, stackState);
+    for (const node of stack.nodes) {
+      nodeByUrn.set(getMeta(node).urn, node);
+    }
+  }
   const queue = createConcurrencyQueue(opt.concurrency ?? 10);
   const graph = new DependencyGraph();
+  const replacementDeletes = /* @__PURE__ */ new Map();
   const allNodes = {};
   for (const stackState of Object.values(appState.stacks)) {
     for (const [urn, nodeState] of entries(stackState.nodes)) {
@@ -912,10 +1080,7 @@ var deployApp = async (app, opt) => {
     }
   }
   for (const stack of stacks) {
-    const stackState = appState.stacks[stack.urn] = appState.stacks[stack.urn] ?? {
-      name: stack.name,
-      nodes: {}
-    };
+    const stackState = stackStates.get(stack.urn);
     for (const [urn, nodeState] of entries(stackState.nodes)) {
       const resource = stack.nodes.find((r) => getMeta(r).urn === urn);
       if (!resource) {
@@ -986,6 +1151,7 @@ var deployApp = async (app, opt) => {
                 const newResourceState = await updateResource(
                   node,
                   appState.idempotentToken,
+                  importedState.input,
                   importedState.output,
                   input,
                   opt
@@ -1013,22 +1179,121 @@ var deployApp = async (app, opt) => {
               !compareState(nodeState.input, input)
             ) {
               let newResourceState;
-              if (requiresReplacement(nodeState.input, input, meta2.config?.replaceOnChanges ?? [])) {
-                newResourceState = await replaceResource(
-                  node,
-                  appState.idempotentToken,
-                  nodeState.output,
-                  input,
-                  opt
-                );
+              const ignoreReplace = forcedUpdateDependents.has(meta2.urn);
+              if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta2.config?.replaceOnChanges ?? [])) {
+                if (meta2.config?.createBeforeReplace) {
+                  const priorState = { ...nodeState };
+                  newResourceState = await createResource(node, appState.idempotentToken, input, opt);
+                  if (!meta2.config?.retainOnDelete) {
+                    replacementDeletes.set(meta2.urn, priorState);
+                  }
+                } else {
+                  for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+                    if (!isResource(dependentNode)) {
+                      continue;
+                    }
+                    const dependentMeta = getMeta(dependentNode);
+                    if (!dependentMeta.dependencies.has(meta2.urn)) {
+                      continue;
+                    }
+                    if (plannedDependents.has(dependentUrn)) {
+                      continue;
+                    }
+                    const dependentStackState = stackStates.get(dependentMeta.stack.urn);
+                    const dependentState = dependentStackState?.nodes[dependentUrn];
+                    if (!dependentStackState || !dependentState) {
+                      continue;
+                    }
+                    const dependencyPaths = findDependencyPaths(dependentMeta.input, meta2.urn);
+                    if (dependencyPaths.length === 0) {
+                      continue;
+                    }
+                    const detachedInput = stripDependencyInputs(
+                      dependentState.input,
+                      dependentMeta.input,
+                      meta2.urn
+                    );
+                    if (compareState(dependentState.input, detachedInput)) {
+                      continue;
+                    }
+                    plannedDependents.add(dependentUrn);
+                    let dependentRequiresReplacement = false;
+                    const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
+                    if (dependentProvider.planResourceChange) {
+                      try {
+                        const dependentPlan = await dependentProvider.planResourceChange({
+                          type: dependentMeta.type,
+                          priorState: dependentState.output,
+                          proposedState: detachedInput
+                        });
+                        dependentRequiresReplacement = dependentPlan.requiresReplacement;
+                      } catch (error) {
+                        throw ResourceError.wrap(
+                          dependentMeta.urn,
+                          dependentMeta.type,
+                          "update",
+                          error
+                        );
+                      }
+                    }
+                    if (dependentRequiresReplacement) {
+                      if (!allowsDependentReplace(
+                        dependentMeta.config?.replaceOnChanges,
+                        dependencyPaths
+                      )) {
+                        throw ResourceError.wrap(
+                          dependentMeta.urn,
+                          dependentMeta.type,
+                          "update",
+                          new Error(
+                            `Replacing ${meta2.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+                          )
+                        );
+                      }
+                      await deleteResource(
+                        appState.idempotentToken,
+                        dependentUrn,
+                        dependentState,
+                        opt
+                      );
+                      delete dependentStackState.nodes[dependentUrn];
+                    } else {
+                      const updated = await updateResource(
+                        dependentNode,
+                        appState.idempotentToken,
+                        dependentState.input,
+                        dependentState.output,
+                        detachedInput,
+                        opt
+                      );
+                      Object.assign(dependentState, {
+                        input: detachedInput,
+                        ...updated
+                      });
+                      forcedUpdateDependents.add(dependentUrn);
+                    }
+                  }
+                  newResourceState = await replaceResource(
+                    node,
+                    appState.idempotentToken,
+                    nodeState.input,
+                    nodeState.output,
+                    input,
+                    opt
+                  );
+                }
               } else {
                 newResourceState = await updateResource(
                   node,
                   appState.idempotentToken,
+                  nodeState.input,
                   nodeState.output,
                   input,
                   opt
                 );
+                if (ignoreReplace) {
+                  forcedUpdateDependents.delete(meta2.urn);
+                }
               }
               Object.assign(nodeState, {
                 input,
@@ -1047,6 +1312,19 @@ var deployApp = async (app, opt) => {
     }
   }
   const errors = await graph.run();
+  if (errors.length === 0 && replacementDeletes.size > 0) {
+    for (const [urn, nodeState] of replacementDeletes.entries()) {
+      try {
+        await deleteResource(appState.idempotentToken, urn, nodeState, opt);
+      } catch (error) {
+        if (error instanceof Error) {
+          errors.push(error);
+        } else {
+          errors.push(new Error(`${error}`));
+        }
+      }
+    }
+  }
   removeEmptyStackStates(appState);
   delete appState.idempotentToken;
   await opt.backend.state.update(app.urn, appState);
@@ -1513,6 +1791,21 @@ var createCustomProvider = (providerId, resourceProviders) => {
     },
     async deleteResource({ type, ...props }) {
       await getProvider(type).deleteResource?.(props);
+    },
+    async planResourceChange({ type, ...props }) {
+      const provider = getProvider(type);
+      if (!provider.planResourceChange) {
+        return {
+          version,
+          state: props.proposedState,
+          requiresReplacement: false
+        };
+      }
+      const result = await provider.planResourceChange(props);
+      return {
+        version,
+        ...result
+      };
     },
     async getData({ type, ...props }) {
       return {

@@ -1,4 +1,4 @@
-import { Provider, State as State$1, GetProps, CreateProps, UpdateProps, DeleteProps, GetDataProps } from '@terraforge/core';
+import { Provider, State as State$1, GetProps, CreateProps, UpdateProps, DeleteProps, PlanProps, GetDataProps } from '@terraforge/core';
 
 type Property = {
     description?: string;
@@ -66,6 +66,11 @@ declare class TerraformProvider implements Provider {
         state: State;
     }>;
     deleteResource({ type, state }: DeleteProps): Promise<void>;
+    planResourceChange({ type, priorState, proposedState }: PlanProps): Promise<{
+        version: number;
+        requiresReplacement: boolean;
+        state: State;
+    }>;
     getData({ type, state }: GetDataProps): Promise<{
         state: State;
     }>;

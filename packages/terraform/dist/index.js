@@ -285,6 +285,15 @@ var TerraformProvider = class {
       throw error;
     }
   }
+  async planResourceChange({ type, priorState, proposedState }) {
+    const plugin = await this.configure();
+    const result = await plugin.planResourceChange(type, priorState, proposedState);
+    return {
+      version: 0,
+      requiresReplacement: result.requiresReplace.length > 0,
+      state: result.plannedState
+    };
+  }
   async getData({ type, state }) {
     const plugin = await this.configure();
     const data = await plugin.readDataSource(type, state);

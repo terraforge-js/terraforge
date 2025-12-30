@@ -7,10 +7,10 @@ import { nodeMetaSymbol } from './node.ts'
 import { URN } from './urn.ts'
 // import { Output } from './output.ts'
 
-export type DataSourceMeta<I extends State = State, O extends State = State> = Meta<'data', I, O>
+export type DataSourceMeta = Meta<'data'>
 
-export type DataSource<I extends State = State, O extends State = State> = {
-	readonly [nodeMetaSymbol]: DataSourceMeta<I, O>
+export type DataSource<O extends State = State> = {
+	readonly [nodeMetaSymbol]: DataSourceMeta
 	readonly urn: URN
 } & O
 
@@ -19,7 +19,7 @@ export type DataSourceFunction<I extends State = State, O extends State = State>
 	id: string,
 	input: I,
 	config?: Config
-) => DataSource<I, O>
+) => DataSource<O>
 
 // export const createDataSourceMeta = <I extends State = State>(
 // 	provider: string,

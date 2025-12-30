@@ -9,6 +9,7 @@ import {
 	OptionalOutput,
 	Output,
 	ResourceNotFound,
+	State,
 	WorkSpace,
 } from '../src'
 import { Hooks } from '../src/workspace/hooks'
@@ -75,6 +76,12 @@ export const createMockProvider = (config?: { requireReplacement?: boolean }) =>
 		}
 	}
 
+	const assertInmutableId = (priorState: State, proposedState: State) => {
+		if (priorState.id !== proposedState.id) {
+			throw new Error('Resource ID cannot be changed.')
+		}
+	}
+
 	const sleep = (delay: number) => {
 		return new Promise(resolve => {
 			setTimeout(resolve, delay)
@@ -114,6 +121,7 @@ export const createMockProvider = (config?: { requireReplacement?: boolean }) =>
 					const item = parseState(props.proposedState)
 					assertResourceExists(item.id)
 					assertResourceDependenciesExists(item.deps)
+					assertInmutableId(props.priorState, props.proposedState)
 
 					await sleep(10)
 

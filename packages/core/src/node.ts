@@ -1,12 +1,12 @@
 import { DataSource, DataSourceMeta } from './data-source.ts'
-import type { Config, Meta, State, Tag } from './meta.ts'
+import type { Meta, State, Tag } from './meta.ts'
 import { Resource, ResourceMeta } from './resource.ts'
 import { URN } from './urn.ts'
 
 export const nodeMetaSymbol = Symbol('metadata')
 
-export type Node<T extends Tag = Tag, I extends State = State, O extends State = any, C extends Config = Config> = {
-	readonly [nodeMetaSymbol]: Meta<T, I, O, C>
+export type Node<T extends Tag = Tag, O extends State = State> = {
+	readonly [nodeMetaSymbol]: Meta<T>
 	readonly urn: URN
 } & O
 
