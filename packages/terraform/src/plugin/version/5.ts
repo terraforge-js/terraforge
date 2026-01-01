@@ -47,23 +47,15 @@ export const createPlugin5 = async ({
 		async readResource(type, state) {
 			const schema = getResourceSchema(resources, type)
 
-			// console.log(state)
-			// console.log(formatInputState(schema, state))
-
 			const read = await client.call('ReadResource', {
 				typeName: type,
 				currentState: encodeDynamicValue(formatInputState(schema, state)),
 			})
 
-			// console.log(decodeDynamicValue(read.newState))
-
 			return formatOutputState(schema, decodeDynamicValue(read.newState))
 		},
 		async readDataSource(type, state) {
 			const schema = getResourceSchema(dataSources, type)
-
-			// console.log(state)
-			// console.log(formatInputState(schema, state))
 
 			const read = await client.call('ReadDataSource', {
 				typeName: type,
