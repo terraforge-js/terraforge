@@ -90,10 +90,10 @@ declare class Stack extends Group {
 //#endregion
 //#region src/meta.d.ts
 type Tag = 'resource' | 'data';
-type State = Record<string, unknown>;
+type State = Record<string, any>;
 type Config = {
   /** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
-  dependsOn?: Resource[];
+  dependsOn?: Array<Resource | DataSource>;
   /** Pass an ID of an explicitly configured provider, instead of using the default provider. */
   provider?: string;
 };

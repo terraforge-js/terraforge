@@ -17,7 +17,6 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"tsdown": "^0.18.4",
-		"tsup": "^8.5.1"
+		"tsdown": "^0.18.4"
 	}
 }

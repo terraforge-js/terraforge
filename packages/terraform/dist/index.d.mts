@@ -112,7 +112,7 @@ declare class Stack extends Group {
 //#endregion
 //#region ../core/src/meta.d.ts
 type Tag = 'resource' | 'data';
-type State = Record<string, unknown>;
+type State = Record<string, any>;
 type Config = {
   /** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
   dependsOn?: Resource[];

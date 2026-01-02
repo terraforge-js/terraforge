@@ -1,4 +1,5 @@
 // import { type DataSource } from './data-source.ts'
+import { DataSource } from './data-source.ts'
 import { Group } from './group.ts'
 import { findInputDeps } from './input.ts'
 import { getMeta } from './node.ts'
@@ -20,11 +21,11 @@ import { createUrn, type URN } from './urn.ts'
 // }
 
 export type Tag = 'resource' | 'data'
-export type State = Record<string, unknown>
+export type State = Record<string, any>
 
 export type Config = {
 	/** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
-	dependsOn?: Resource[]
+	dependsOn?: Array<Resource | DataSource>
 
 	/** Pass an ID of an explicitly configured provider, instead of using the default provider. */
 	provider?: string

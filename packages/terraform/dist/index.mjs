@@ -33,6 +33,8 @@ const generateResourceTypes = (resources) => {
 			`${tab(indent)}export type ${typeName}Output = ${generatePropertyOutputType(prop, indent)}`,
 			`${tab(indent)}export class ${typeName} {`,
 			`${tab(indent + 1)}constructor(parent: c.Group, id: string, props: ${typeName}Input, config?:c.ResourceConfig)`,
+			`${tab(indent + 2)}readonly [c.nodeMetaSymbol]: c.ResourceMeta`,
+			`${tab(indent + 2)}readonly urn: c.URN`,
 			generateClassProperties(prop, indent + 1),
 			`${tab(indent)}}`
 		].join("\n\n");
