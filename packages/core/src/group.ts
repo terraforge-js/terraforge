@@ -27,7 +27,7 @@ export class Group {
 		return `${urn}:${this.type}:{${this.name}}`
 	}
 
-	protected addChild(child: Group | Node) {
+	protected addChild(child: Group | Node): void {
 		if (isNode(child)) {
 			const meta = getMeta(child)
 			const duplicate = this.children
@@ -53,7 +53,7 @@ export class Group {
 		this.children.push(child)
 	}
 
-	add(...children: Array<Group | Node>) {
+	add(...children: Array<Group | Node>): void {
 		for (const child of children) {
 			this.addChild(child)
 		}

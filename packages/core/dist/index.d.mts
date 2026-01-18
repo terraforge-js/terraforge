@@ -85,7 +85,6 @@ declare class Stack extends Group {
   readonly app: App;
   readonly dependencies: Set<Stack>;
   constructor(app: App, name: string);
-  dependsOn(...stacks: Stack[]): this;
 }
 //#endregion
 //#region src/meta.d.ts
@@ -147,11 +146,11 @@ declare const enableDebug: () => void;
 declare const createDebugger: (group: string) => (...args: unknown[]) => void;
 //#endregion
 //#region src/backend/lock.d.ts
-interface LockBackend {
+type LockBackend = {
   insecureReleaseLock(urn: URN): Promise<void>;
   locked(urn: URN): Promise<boolean>;
   lock(urn: URN): Promise<() => Promise<void>>;
-}
+};
 //#endregion
 //#region src/workspace/state.d.ts
 type AppState = {

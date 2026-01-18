@@ -1,8 +1,9 @@
 import { aws } from '@terraforge/aws'
-import { App, Resource, Stack } from '@terraforge/core'
+import { App, Group, Resource, Stack } from '@terraforge/core'
 
 const app = new App('app')
 const stack = new Stack(app, 'stack')
+const group = new Group(stack, 'stack', 'lol')
 
 await aws.install()
 
@@ -14,9 +15,9 @@ if (await aws.isInstalled()) {
 
 // await aws.install()
 
-const vpc = new aws.Vpc(stack, 'vpc', {})
-const bucket1 = new aws.s3.Bucket(stack, 'bucket-1', { bucket: 'my-special-name-123' })
-const bucket2 = aws.s3.getBucket(stack, 'bucket-2', { bucket: 'my-special-name-123' })
+const vpc = new aws.Vpc(group, 'vpc', {})
+const bucket1 = new aws.s3.Bucket(group, 'bucket-1', { bucket: 'my-special-name-123' })
+const bucket2 = aws.s3.getBucket(group, 'bucket-2', { bucket: 'my-special-name-123' })
 const param = aws.ssm.getParameter(
 	stack,
 	'param',

@@ -1,6 +1,6 @@
 // import { DataSourceMeta } from './data-source.ts'
 import { Future } from './future.ts'
-import { findInputDeps, Input, UnwrapInputArray } from './input.ts'
+import { findInputDeps, Input, resolveInputs, UnwrapInputArray } from './input.ts'
 import { Meta } from './meta.ts'
 // import { ResourceMeta } from './resource.ts'
 
@@ -67,9 +67,12 @@ export const combine = <T extends Input[], R = UnwrapInputArray<T>>(...inputs: T
 	const deps = new Set(findInputDeps(inputs))
 
 	return new Output<R>(deps, (resolve, reject) => {
-		Promise.all(inputs).then(result => {
-			resolve(result as R)
-		}, reject)
+		Promise.all(inputs)
+			// This will resolve deeper inputs
+			.then(resolveInputs)
+			.then(result => {
+				resolve(result as R)
+			}, reject)
 	})
 }
 

@@ -76,13 +76,6 @@ var Stack = class extends Group {
 		super(app, "stack", name);
 		this.app = app;
 	}
-	dependsOn(...stacks) {
-		for (const stack of stacks) {
-			if (stack.app !== this.app) throw new Error(`Stacks that belong to different apps can't be dependent on each other`);
-			this.dependencies.add(stack);
-		}
-		return this;
-	}
 };
 const findParentStack = (group) => {
 	if (group instanceof Stack) return group;
@@ -143,21 +136,23 @@ var Future = class Future {
 			});
 			if (this.status === IDLE) {
 				this.status = PENDING;
-				this.callback((data) => {
+				const onResolve = (data) => {
 					if (this.status === PENDING) {
 						this.status = RESOLVED;
 						this.data = data;
 						this.listeners.forEach(({ resolve: resolve$2 }) => resolve$2(data));
 						this.listeners.clear();
 					}
-				}, (error) => {
+				};
+				const onReject = (error) => {
 					if (this.status === PENDING) {
 						this.status = REJECTED;
 						this.error = error;
 						this.listeners.forEach(({ reject: reject$1 }) => reject$1?.(error));
 						this.listeners.clear();
 					}
-				});
+				};
+				Promise.resolve(this.callback(onResolve, onReject)).catch(onReject);
 			}
 		}
 	}
@@ -186,15 +181,17 @@ const resolveInputs = async (inputs) => {
 	const responses = await Promise.all(unresolved.map(async ([obj, key]) => {
 		const promise = obj[key];
 		let timeout;
-		const response = await Promise.race([promise, new Promise((_, reject) => {
-			timeout = setTimeout(() => {
-				if (promise instanceof Output) reject(/* @__PURE__ */ new Error(`Resolving Output<${[...promise.dependencies].map((d) => d.urn).join(", ")}> took too long.`));
-				else if (promise instanceof Future) reject(/* @__PURE__ */ new Error("Resolving Future took too long."));
-				else reject(/* @__PURE__ */ new Error("Resolving Promise took too long."));
-			}, 3e3);
-		})]);
-		clearTimeout(timeout);
-		return response;
+		try {
+			return await Promise.race([promise, new Promise((_, reject) => {
+				timeout = setTimeout(() => {
+					if (promise instanceof Output) reject(/* @__PURE__ */ new Error(`Resolving Output<${[...promise.dependencies].map((d) => d.urn).join(", ")}> took too long.`));
+					else if (promise instanceof Future) reject(/* @__PURE__ */ new Error("Resolving Future took too long."));
+					else reject(/* @__PURE__ */ new Error("Resolving Promise took too long."));
+				}, 3e3);
+			})]);
+		} finally {
+			clearTimeout(timeout);
+		}
 	}));
 	unresolved.forEach(([props, key], i) => {
 		props[key] = responses[i];
@@ -227,7 +224,7 @@ const output = (value) => {
 };
 const combine = (...inputs) => {
 	return new Output(new Set(findInputDeps(inputs)), (resolve$1, reject) => {
-		Promise.all(inputs).then((result) => {
+		Promise.all(inputs).then(resolveInputs).then((result) => {
 			resolve$1(result);
 		}, reject);
 	});

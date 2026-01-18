@@ -22,15 +22,28 @@ type Response = {
 type DiagnosticEntry = {
 	readonly severity: 'error' | 'warning'
 	readonly summary: string
+	readonly detail?: string
 	readonly path?: Array<string | number>
 }
 
 class DiagnosticsError extends Error {
-	readonly diagnostics: DiagnosticEntry[]
-	constructor(diagnostics: DiagnosticEntry[]) {
-		super(diagnostics[0]?.summary ?? 'Diagnostic error')
-		this.diagnostics = diagnostics
+	constructor(readonly diagnostics: DiagnosticEntry[]) {
+		super(formatDiagnosticErrorMessage(diagnostics))
 	}
+}
+
+const formatDiagnosticErrorMessage = (diagnostics: DiagnosticEntry[]): string => {
+	if (diagnostics.length === 0) {
+		return 'Unknown diagnostic error'
+	}
+
+	const diagnostic = diagnostics[0]!
+
+	if (diagnostic.detail) {
+		return `${diagnostic.summary}\n\n${diagnostic.detail}`
+	}
+
+	return diagnostic.summary
 }
 
 export const throwDiagnosticError = (response: Response) => {

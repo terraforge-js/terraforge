@@ -54,26 +54,27 @@ export class Future<T = unknown> {
 			if (this.status === IDLE) {
 				this.status = PENDING
 
-				this.callback(
-					data => {
-						if (this.status === PENDING) {
-							this.status = RESOLVED
-							this.data = data
+				const onResolve = (data: T) => {
+					if (this.status === PENDING) {
+						this.status = RESOLVED
+						this.data = data
 
-							this.listeners.forEach(({ resolve }) => resolve(data))
-							this.listeners.clear()
-						}
-					},
-					error => {
-						if (this.status === PENDING) {
-							this.status = REJECTED
-							this.error = error
-
-							this.listeners.forEach(({ reject }) => reject?.(error))
-							this.listeners.clear()
-						}
+						this.listeners.forEach(({ resolve }) => resolve(data))
+						this.listeners.clear()
 					}
-				)
+				}
+
+				const onReject = (error: unknown) => {
+					if (this.status === PENDING) {
+						this.status = REJECTED
+						this.error = error
+
+						this.listeners.forEach(({ reject }) => reject?.(error))
+						this.listeners.clear()
+					}
+				}
+
+				Promise.resolve(this.callback(onResolve, onReject)).catch(onReject)
 			}
 		}
 	}

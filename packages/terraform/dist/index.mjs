@@ -301,11 +301,16 @@ var TerraformProvider = class {
 //#endregion
 //#region src/plugin/diagnostic.ts
 var DiagnosticsError = class extends Error {
-	diagnostics;
 	constructor(diagnostics) {
-		super(diagnostics[0]?.summary ?? "Diagnostic error");
+		super(formatDiagnosticErrorMessage(diagnostics));
 		this.diagnostics = diagnostics;
 	}
+};
+const formatDiagnosticErrorMessage = (diagnostics) => {
+	if (diagnostics.length === 0) return "Unknown diagnostic error";
+	const diagnostic = diagnostics[0];
+	if (diagnostic.detail) return `${diagnostic.summary}\n${diagnostic.detail}`;
+	return diagnostic.summary;
 };
 const throwDiagnosticError = (response) => {
 	return new DiagnosticsError(response.diagnostics.map((item) => ({

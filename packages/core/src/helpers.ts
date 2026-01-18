@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Future } from './future.ts'
 
-export const file = (path: string, encoding: BufferEncoding = 'utf8') => {
-	return new Future<string>(async (resolve, reject) => {
+export const file = (path: string, encoding: BufferEncoding = 'utf8'): Future<string> => {
+	return new Future(async (resolve, reject) => {
 		try {
 			const file = await readFile(path, {
 				encoding,

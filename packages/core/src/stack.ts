@@ -11,17 +11,17 @@ export class Stack extends Group {
 		super(app, 'stack', name)
 	}
 
-	dependsOn(...stacks: Stack[]) {
-		for (const stack of stacks) {
-			if (stack.app !== this.app) {
-				throw new Error(`Stacks that belong to different apps can't be dependent on each other`)
-			}
+	// dependsOn(...stacks: Stack[]) {
+	// 	for (const stack of stacks) {
+	// 		if (stack.app !== this.app) {
+	// 			throw new Error(`Stacks that belong to different apps can't be dependent on each other`)
+	// 		}
 
-			this.dependencies.add(stack)
-		}
+	// 		this.dependencies.add(stack)
+	// 	}
 
-		return this
-	}
+	// 	return this
+	// }
 }
 
 export const findParentStack = (group: Group): Stack => {

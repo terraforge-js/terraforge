@@ -107,7 +107,6 @@ declare class Stack extends Group {
   readonly app: App;
   readonly dependencies: Set<Stack>;
   constructor(app: App, name: string);
-  dependsOn(...stacks: Stack[]): this;
 }
 //#endregion
 //#region ../core/src/meta.d.ts
@@ -115,7 +114,7 @@ type Tag = 'resource' | 'data';
 type State = Record<string, any>;
 type Config = {
   /** Specify additional explicit dependencies in addition to the ones in the dependency graph. */
-  dependsOn?: Resource[];
+  dependsOn?: Array<Resource | DataSource>;
   /** Pass an ID of an explicitly configured provider, instead of using the default provider. */
   provider?: string;
 };

@@ -69,28 +69,32 @@ export const resolveInputs = async <T>(inputs: T): Promise<T> => {
 	const responses = await Promise.all(
 		unresolved.map(async ([obj, key]) => {
 			const promise = obj[key]
-			let timeout
-			const response = await Promise.race([
-				promise,
-				new Promise((_, reject) => {
-					timeout = setTimeout(() => {
-						if (promise instanceof Output) {
-							reject(
-								new Error(
-									`Resolving Output<${[...promise.dependencies].map(d => d.urn).join(', ')}> took too long.`
-								)
-							)
-						} else if (promise instanceof Future) {
-							reject(new Error('Resolving Future took too long.'))
-						} else {
-							reject(new Error('Resolving Promise took too long.'))
-						}
-					}, 3000)
-				}),
-			])
 
-			clearTimeout(timeout)
-			return response
+			let timeout
+			try {
+				const response = await Promise.race([
+					promise,
+					new Promise((_, reject) => {
+						timeout = setTimeout(() => {
+							if (promise instanceof Output) {
+								reject(
+									new Error(
+										`Resolving Output<${[...promise.dependencies].map(d => d.urn).join(', ')}> took too long.`
+									)
+								)
+							} else if (promise instanceof Future) {
+								reject(new Error('Resolving Future took too long.'))
+							} else {
+								reject(new Error('Resolving Promise took too long.'))
+							}
+						}, 3000)
+					}),
+				])
+
+				return response
+			} finally {
+				clearTimeout(timeout)
+			}
 		})
 	)
 
