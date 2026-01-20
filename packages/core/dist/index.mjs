@@ -968,6 +968,7 @@ const deployApp = async (app, opt) => {
 							if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
 								const priorState = { ...nodeState };
 								newResourceState = await createResource(node, appState.idempotentToken, input, opt);
+								if (newResourceState.output) meta$1.resolve(newResourceState.output);
 								if (!meta$1.config?.retainOnDelete) replacementDeletes.set(meta$1.urn, priorState);
 							} else {
 								for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
@@ -1008,6 +1009,7 @@ const deployApp = async (app, opt) => {
 									}
 								}
 								newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
+								if (newResourceState.output) meta$1.resolve(newResourceState.output);
 							}
 							else {
 								newResourceState = await updateResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
@@ -1093,6 +1095,98 @@ const refresh = async (app, opt) => {
 };
 
 //#endregion
+//#region src/workspace/procedure/status.ts
+/**
+* Extract static values from inputs, omitting Output/Future/Promise values.
+* This allows comparing only the static parts of config without needing to resolve dependencies.
+* We omit dynamic values entirely rather than using placeholders, since the state file
+* contains resolved values that we can't meaningfully compare against.
+*/
+const extractStaticInputs = (inputs) => {
+	if (inputs instanceof Output || inputs instanceof Future || inputs instanceof Promise) return;
+	if (Array.isArray(inputs)) return inputs.map(extractStaticInputs);
+	if (inputs !== null && typeof inputs === "object" && inputs.constructor === Object) {
+		const result = {};
+		for (const [key, value] of Object.entries(inputs)) {
+			const extracted = extractStaticInputs(value);
+			if (extracted !== void 0) result[key] = extracted;
+		}
+		return result;
+	}
+	return inputs;
+};
+/**
+* Remove keys from state that correspond to dynamic (Output/Future/Promise) values in config.
+* This ensures we only compare static values that exist in both.
+*/
+const filterStateToMatchConfig = (state, config) => {
+	if (config instanceof Output || config instanceof Future || config instanceof Promise) return;
+	if (Array.isArray(config) && Array.isArray(state)) return config.map((configItem, index) => filterStateToMatchConfig(state[index], configItem));
+	if (config !== null && typeof config === "object" && config.constructor === Object && state !== null && typeof state === "object") {
+		const result = {};
+		for (const [key, configValue] of Object.entries(config)) {
+			const stateValue = state[key];
+			const filtered = filterStateToMatchConfig(stateValue, configValue);
+			if (filtered !== void 0) result[key] = filtered;
+		}
+		return result;
+	}
+	return state;
+};
+const status = async (app, opt) => {
+	const appState = await opt.backend.state.get(app.urn);
+	const resources = [];
+	const configuredUrns = /* @__PURE__ */ new Set();
+	for (const stack of app.stacks) for (const node of stack.nodes) configuredUrns.add(getMeta(node).urn);
+	for (const stack of app.stacks) {
+		const stackState = appState?.stacks[stack.urn];
+		for (const node of stack.nodes) {
+			const meta = getMeta(node);
+			const nodeState = stackState?.nodes[meta.urn];
+			const baseInfo = {
+				urn: meta.urn,
+				type: meta.type,
+				provider: meta.provider,
+				tag: isResource(node) ? "resource" : "data"
+			};
+			if (!nodeState) {
+				resources.push({
+					...baseInfo,
+					status: "pending"
+				});
+				continue;
+			}
+			const currentInput = extractStaticInputs(meta.input);
+			const hasChanged = !compareState(filterStateToMatchConfig(nodeState.input, meta.input), currentInput);
+			resources.push({
+				...baseInfo,
+				status: hasChanged ? "changed" : "created"
+			});
+		}
+		if (stackState) {
+			for (const [urn, nodeState] of Object.entries(stackState.nodes)) if (!configuredUrns.has(urn)) resources.push({
+				urn,
+				type: nodeState.type,
+				provider: nodeState.provider,
+				tag: nodeState.tag,
+				status: "stale"
+			});
+		}
+	}
+	if (appState) {
+		const configuredStackUrns = new Set(app.stacks.map((s) => s.urn));
+		for (const [stackUrn, stackState] of Object.entries(appState.stacks)) if (!configuredStackUrns.has(stackUrn)) for (const [urn, nodeState] of Object.entries(stackState.nodes)) resources.push({
+			urn,
+			type: nodeState.type,
+			provider: nodeState.provider,
+			tag: nodeState.tag,
+			status: "stale"
+		});
+	}
+	return resources;
+};
+
+//#endregion
 //#region src/workspace/workspace.ts
 var WorkSpace = class {
 	constructor(props) {
@@ -1145,6 +1239,12 @@ var WorkSpace = class {
 				await this.destroyProviders();
 			}
 		});
+	}
+	/**
+	* Get the status of all resources in the app by comparing current config with state file.
+	*/
+	status(app) {
+		return status(app, this.props);
 	}
 	async destroyProviders() {
 		await Promise.all(this.props.providers.map((p) => {

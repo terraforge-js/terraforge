@@ -187,6 +187,10 @@ export const createTerraformProxy = (props: {
 			const meta = createMeta('resource', provider, parent, type, id, input, config)
 			const resource = createResourceProxy(key => {
 				if (typeof key === 'string') {
+					if (key === 'urn') {
+						return meta.urn
+					}
+
 					return meta.output(data => data[key])
 				} else if (key === nodeMetaSymbol) {
 					return meta
@@ -206,6 +210,10 @@ export const createTerraformProxy = (props: {
 
 			const dataSource = createResourceProxy(key => {
 				if (typeof key === 'string') {
+					if (key === 'urn') {
+						return meta.urn
+					}
+
 					return meta.output(data => data[key])
 				} else if (key === nodeMetaSymbol) {
 					return meta

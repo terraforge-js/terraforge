@@ -30,6 +30,7 @@ export type { Input, OptionalInput } from './input.ts'
 export type { OptionalOutput } from './output.ts'
 
 export type { WorkSpaceOptions, ProcedureOptions } from './workspace/workspace.ts'
+export type { ResourceStatus, ResourceStatusInfo } from './workspace/procedure/status.ts'
 
 export type * from './backend/state.ts'
 export type * from './backend/lock.ts'

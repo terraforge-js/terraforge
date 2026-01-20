@@ -145,6 +145,24 @@ declare class App extends Group {
 declare const enableDebug: () => void;
 declare const createDebugger: (group: string) => (...args: unknown[]) => void;
 //#endregion
+//#region src/workspace/procedure/status.d.ts
+/**
+ * The status of a resource comparing local config with state file.
+ *
+ * - `created`: Resource exists in state and matches current config
+ * - `changed`: Resource exists in state but config has changed
+ * - `pending`: Resource exists in config but not yet deployed (no state)
+ * - `stale`: Resource exists in state but was removed from config
+ */
+type ResourceStatus = 'created' | 'changed' | 'pending' | 'stale';
+type ResourceStatusInfo = {
+  urn: URN;
+  type: string;
+  provider: string;
+  tag: 'resource' | 'data';
+  status: ResourceStatus;
+};
+//#endregion
 //#region src/backend/lock.d.ts
 type LockBackend = {
   insecureReleaseLock(urn: URN): Promise<void>;
@@ -317,6 +335,10 @@ declare class WorkSpace {
    * Refresh the state of the resources & data-sources inside your app.
    */
   refresh(app: App): Promise<void>;
+  /**
+   * Get the status of all resources in the app by comparing current config with state file.
+   */
+  status(app: App): Promise<ResourceStatusInfo[]>;
   protected destroyProviders(): Promise<void>;
 }
 //#endregion
@@ -443,4 +465,4 @@ type CustomResourceProvider = Partial<{
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, S3StateBackend, Stack, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

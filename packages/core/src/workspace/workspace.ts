@@ -10,6 +10,7 @@ import { deleteApp } from './procedure/delete-app.ts'
 import { deployApp } from './procedure/deploy-app.ts'
 import { hydrate } from './procedure/hydrate.ts'
 import { refresh } from './procedure/refresh.ts'
+import { status } from './procedure/status.ts'
 
 export type ProcedureOptions = {
 	filters?: string[]
@@ -73,6 +74,13 @@ export class WorkSpace {
 				await this.destroyProviders()
 			}
 		})
+	}
+
+	/**
+	 * Get the status of all resources in the app by comparing current config with state file.
+	 */
+	status(app: App) {
+		return status(app, this.props)
 	}
 
 	protected async destroyProviders() {

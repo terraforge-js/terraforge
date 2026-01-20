@@ -309,7 +309,7 @@ var DiagnosticsError = class extends Error {
 const formatDiagnosticErrorMessage = (diagnostics) => {
 	if (diagnostics.length === 0) return "Unknown diagnostic error";
 	const diagnostic = diagnostics[0];
-	if (diagnostic.detail) return `${diagnostic.summary}\n${diagnostic.detail}`;
+	if (diagnostic.detail) return `${diagnostic.summary}\n\n${diagnostic.detail}`;
 	return diagnostic.summary;
 };
 const throwDiagnosticError = (response) => {
@@ -2349,8 +2349,10 @@ const createTerraformProxy = (props) => {
 			const type = snakeCase([props.namespace, ...ns].join("_"));
 			const meta = createMeta("resource", `terraform:${props.namespace}:${config?.provider ?? "default"}`, parent, type, id, input, config);
 			const resource = createResourceProxy((key) => {
-				if (typeof key === "string") return meta.output((data) => data[key]);
-				else if (key === nodeMetaSymbol) return meta;
+				if (typeof key === "string") {
+					if (key === "urn") return meta.urn;
+					return meta.output((data) => data[key]);
+				} else if (key === nodeMetaSymbol) return meta;
 			});
 			parent.add(resource);
 			return resource;
@@ -2359,8 +2361,10 @@ const createTerraformProxy = (props) => {
 			const type = snakeCase([props.namespace, ...ns].join("_"));
 			const meta = createMeta("data", `terraform:${props.namespace}:${config?.provider ?? "default"}`, parent, type, id, input, config);
 			const dataSource = createResourceProxy((key) => {
-				if (typeof key === "string") return meta.output((data) => data[key]);
-				else if (key === nodeMetaSymbol) return meta;
+				if (typeof key === "string") {
+					if (key === "urn") return meta.urn;
+					return meta.output((data) => data[key]);
+				} else if (key === nodeMetaSymbol) return meta;
 			});
 			parent.add(dataSource);
 			return dataSource;

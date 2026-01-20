@@ -46,6 +46,7 @@ describe('Terraform Proxy API', () => {
 		expect(isNode(resource)).toBe(true)
 		expect(isResource(resource)).toBe(true)
 		expect(isDataSource(resource)).toBe(false)
+		expect(resource.urn).toBeTypeOf('string')
 	})
 
 	it('capitalized access with the "get" prefix should be a datasource function', () => {
@@ -58,5 +59,6 @@ describe('Terraform Proxy API', () => {
 		expect(isNode(dataSource)).toBe(true)
 		expect(isResource(dataSource)).toBe(false)
 		expect(isDataSource(dataSource)).toBe(true)
+		expect(dataSource.urn).toBeTypeOf('string')
 	})
 })

@@ -320,6 +320,11 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									const priorState = { ...nodeState }
 									newResourceState = await createResource(node, appState.idempotentToken!, input, opt)
 
+									// Resolve immediately so dependents can access the new output
+									if (newResourceState.output) {
+										meta.resolve(newResourceState.output)
+									}
+
 									if (!meta.config?.retainOnDelete) {
 										replacementDeletes.set(meta.urn, priorState)
 									}
@@ -437,6 +442,11 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 										input,
 										opt
 									)
+
+									// Resolve immediately so dependents can access the new output
+									if (newResourceState.output) {
+										meta.resolve(newResourceState.output)
+									}
 								}
 							} else {
 								// --------------------------------------------------
