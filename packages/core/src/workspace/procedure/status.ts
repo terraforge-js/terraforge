@@ -24,6 +24,12 @@ export type ResourceStatusInfo = {
 	status: ResourceStatus
 }
 
+export type StackStatusInfo = {
+	name: string
+	urn: URN
+	resources: ResourceStatusInfo[]
+}
+
 /**
  * Extract static values from inputs, omitting Output/Future/Promise values.
  * This allows comparing only the static parts of config without needing to resolve dependencies.
@@ -90,10 +96,10 @@ const filterStateToMatchConfig = (state: unknown, config: unknown): unknown => {
 	return state
 }
 
-export const status = async (app: App, opt: WorkSpaceOptions): Promise<ResourceStatusInfo[]> => {
+export const status = async (app: App, opt: WorkSpaceOptions): Promise<StackStatusInfo[]> => {
 	const appState = await opt.backend.state.get(app.urn)
 
-	const resources: ResourceStatusInfo[] = []
+	const stacks: StackStatusInfo[] = []
 
 	// Track which URNs are in the current config
 	const configuredUrns: Set<string> = new Set()
@@ -107,6 +113,7 @@ export const status = async (app: App, opt: WorkSpaceOptions): Promise<ResourceS
 	// Process each stack in the app
 	for (const stack of app.stacks) {
 		const stackState = appState?.stacks[stack.urn]
+		const resources: ResourceStatusInfo[] = []
 
 		for (const node of stack.nodes) {
 			const meta = getMeta(node)
@@ -157,6 +164,12 @@ export const status = async (app: App, opt: WorkSpaceOptions): Promise<ResourceS
 				}
 			}
 		}
+
+		stacks.push({
+			name: stack.name,
+			urn: stack.urn,
+			resources,
+		})
 	}
 
 	// Check for stale stacks (exist in state but not in app config)
@@ -165,6 +178,8 @@ export const status = async (app: App, opt: WorkSpaceOptions): Promise<ResourceS
 
 		for (const [stackUrn, stackState] of Object.entries(appState.stacks)) {
 			if (!configuredStackUrns.has(stackUrn as URN)) {
+				const resources: ResourceStatusInfo[] = []
+
 				for (const [urn, nodeState] of Object.entries(stackState.nodes) as [string, NodeState][]) {
 					resources.push({
 						urn: urn as URN,
@@ -174,9 +189,15 @@ export const status = async (app: App, opt: WorkSpaceOptions): Promise<ResourceS
 						status: 'stale',
 					})
 				}
+
+				stacks.push({
+					name: stackState.name,
+					urn: stackUrn as URN,
+					resources,
+				})
 			}
 		}
 	}
 
-	return resources
+	return stacks
 }

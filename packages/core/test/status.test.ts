@@ -1,8 +1,12 @@
 import { App, Stack } from '../src'
+import { ResourceStatusInfo } from '../src/workspace/procedure/status'
 import { createMockWorkSpace, Resource } from './_mock'
 
 describe('status', () => {
 	const { workspace, reset } = createMockWorkSpace()
+
+	// Helper to flatten stacks into resources for easier assertions
+	const flattenStatus = (stacks: { resources: ResourceStatusInfo[] }[]) => stacks.flatMap(s => s.resources)
 
 	beforeEach(() => {
 		reset()
@@ -16,10 +20,13 @@ describe('status', () => {
 		new Resource(stack, 'r2', { id: '2' })
 
 		const status = await workspace.status(app)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('pending')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('pending')
+		expect(status).toHaveLength(1)
+		expect(status[0]?.name).toBe('stack')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('pending')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('pending')
 	})
 
 	it('should return created for deployed resources with unchanged config', async () => {
@@ -32,10 +39,11 @@ describe('status', () => {
 		await workspace.deploy(app)
 
 		const status = await workspace.status(app)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('created')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('created')
 	})
 
 	it('should return changed for deployed resources with modified config', async () => {
@@ -53,9 +61,10 @@ describe('status', () => {
 		new Resource(stack2, 'r1', { id: '1', update: 2 })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(1)
-		expect(status[0]?.status).toBe('changed')
+		expect(resources).toHaveLength(1)
+		expect(resources[0]?.status).toBe('changed')
 	})
 
 	it('should return stale for resources removed from config', async () => {
@@ -74,10 +83,11 @@ describe('status', () => {
 		new Resource(stack2, 'r1', { id: '1' })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('stale')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('stale')
 	})
 
 	it('should return stale for resources in removed stacks', async () => {
@@ -97,10 +107,14 @@ describe('status', () => {
 		new Resource(newStack1, 'r1', { id: '1' })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
 
 		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('stale')
+		expect(status.find(s => s.name === 'stack-1')).toBeDefined()
+		expect(status.find(s => s.name === 'stack-2')).toBeDefined()
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('stale')
 	})
 
 	it('should return empty array for empty app with no state', async () => {
@@ -124,7 +138,6 @@ describe('status', () => {
 		// - r1 unchanged (created)
 		// - r2 changed (changed)
 		// - r3 new (pending)
-		// - r1 from state removed would be stale, but we keep r1
 		const app2 = new App('app')
 		const stack2 = new Stack(app2, 'stack')
 
@@ -133,11 +146,12 @@ describe('status', () => {
 		new Resource(stack2, 'r3', { id: '3' })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(3)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('changed')
-		expect(status.find(r => r.urn.includes('r3'))?.status).toBe('pending')
+		expect(resources).toHaveLength(3)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('changed')
+		expect(resources.find(r => r.urn.includes('r3'))?.status).toBe('pending')
 	})
 
 	it('should return created for deployed resources with dependencies', async () => {
@@ -150,10 +164,11 @@ describe('status', () => {
 		await workspace.deploy(app)
 
 		const status = await workspace.status(app)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('created')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('created')
 	})
 
 	it('should return created for unchanged dependent resources after redeploy', async () => {
@@ -173,10 +188,11 @@ describe('status', () => {
 		new Resource(stack2, 'r2', { id: '2', deps: [r1b.id] })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('created')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('created')
 	})
 
 	it('should return created for chained dependencies', async () => {
@@ -190,11 +206,12 @@ describe('status', () => {
 		await workspace.deploy(app)
 
 		const status = await workspace.status(app)
+		const resources = flattenStatus(status)
 
-		expect(status).toHaveLength(3)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r3'))?.status).toBe('created')
+		expect(resources).toHaveLength(3)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r3'))?.status).toBe('created')
 	})
 
 	it('should return created for cross-stack dependencies', async () => {
@@ -208,10 +225,12 @@ describe('status', () => {
 		await workspace.deploy(app)
 
 		const status = await workspace.status(app)
+		const resources = flattenStatus(status)
 
 		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('created')
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('created')
 	})
 
 	it('should detect changed on dependent resource when static input changes', async () => {
@@ -231,9 +250,36 @@ describe('status', () => {
 		new Resource(stack2, 'r2', { id: '2', update: 2, deps: [r1b.id] })
 
 		const status = await workspace.status(app2)
+		const resources = flattenStatus(status)
+
+		expect(resources).toHaveLength(2)
+		expect(resources.find(r => r.urn.includes('r1'))?.status).toBe('created')
+		expect(resources.find(r => r.urn.includes('r2'))?.status).toBe('changed')
+	})
+
+	it('should group resources by stack', async () => {
+		const app = new App('app')
+		const stack1 = new Stack(app, 'stack-1')
+		const stack2 = new Stack(app, 'stack-2')
+
+		new Resource(stack1, 'r1', { id: '1' })
+		new Resource(stack1, 'r2', { id: '2' })
+		new Resource(stack2, 'r3', { id: '3' })
+
+		await workspace.deploy(app)
+
+		const status = await workspace.status(app)
 
 		expect(status).toHaveLength(2)
-		expect(status.find(r => r.urn.includes('r1'))?.status).toBe('created')
-		expect(status.find(r => r.urn.includes('r2'))?.status).toBe('changed')
+
+		const s1 = status.find(s => s.name === 'stack-1')
+		const s2 = status.find(s => s.name === 'stack-2')
+
+		expect(s1?.resources).toHaveLength(2)
+		expect(s1?.resources.find(r => r.urn.includes('r1'))).toBeDefined()
+		expect(s1?.resources.find(r => r.urn.includes('r2'))).toBeDefined()
+
+		expect(s2?.resources).toHaveLength(1)
+		expect(s2?.resources.find(r => r.urn.includes('r3'))).toBeDefined()
 	})
 })
