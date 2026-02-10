@@ -1,12 +1,24 @@
 import type { Config, Node, Resource, ResourceConfig, State } from '@terraforge/core'
 import { createMeta, Group, nodeMetaSymbol } from '@terraforge/core'
-import { snakeCase } from 'change-case'
+import { pascalCase, snakeCase } from 'change-case'
 import { createLazyPlugin } from './lazy-plugin'
 import { deletePlugin, downloadPlugin, isPluginInstalled } from './plugin/download'
 import { Version } from './plugin/registry'
 import { TerraformProvider } from './provider'
 
-const createResourceProxy = (cb: (key: string | symbol) => unknown) => {
+type Klass = { new (): object }
+
+const classMap = new Map<string, Klass>()
+
+const getClass = (type: string): Klass => {
+	if (!classMap.has(type)) {
+		classMap.set(type, class {})
+	}
+
+	return classMap.get(type)!
+}
+
+const createResourceProxy = (klass: Klass, cb: (key: string | symbol) => unknown) => {
 	return new Proxy(
 		{},
 		{
@@ -19,6 +31,9 @@ const createResourceProxy = (cb: (key: string | symbol) => unknown) => {
 				}
 
 				throw new Error(`This object is read-only.`)
+			},
+			getPrototypeOf() {
+				return klass.prototype
 			},
 		}
 	)
@@ -74,12 +89,25 @@ const createRootProxy = (apply: (...args: any[]) => object, get: (key: string) =
 	})
 }
 
-const createClassProxy = (construct: (...args: any[]) => object, get: (...args: any[]) => object) => {
-	return new Proxy(class {}, {
+const createClassProxy = (
+	name: string,
+	target: Klass,
+	construct: (...args: any[]) => object,
+	get: (...args: any[]) => object
+) => {
+	return new Proxy(target, {
 		construct(_, args) {
 			return construct(...args)
 		},
 		get(_, key) {
+			if (key === 'prototype') {
+				return target.prototype
+			}
+
+			if (key === 'name') {
+				return name
+			}
+
 			if (key === 'get') {
 				return (...args: any[]) => {
 					return get(...args)
@@ -96,6 +124,7 @@ const createRecursiveProxy = ({
 	install,
 	uninstall,
 	isInstalled,
+	class: klass,
 	resource,
 	dataSource,
 }: {
@@ -103,6 +132,7 @@ const createRecursiveProxy = ({
 	install: (...args: any[]) => Promise<void>
 	uninstall: (...args: any[]) => Promise<void>
 	isInstalled: (...args: any[]) => Promise<boolean>
+	class: (ns: string[]) => Klass
 	resource: (ns: string[], ...args: any[]) => object
 	dataSource: (ns: string[], ...args: any[]) => object
 }) => {
@@ -117,6 +147,8 @@ const createRecursiveProxy = ({
 			}
 		} else {
 			return createClassProxy(
+				pascalCase([...ns, name].join('-')),
+				klass([...ns, name]),
 				(...args) => {
 					return resource([...ns, name], ...args)
 				},
@@ -181,11 +213,15 @@ export const createTerraformProxy = (props: {
 		isInstalled(installProps?: InstallProps) {
 			return isPluginInstalled({ ...props.provider, ...installProps })
 		},
+		class: (ns: string[]) => {
+			const type = snakeCase([props.namespace, ...ns].join('_'))
+			return getClass(type)
+		},
 		resource: (ns: string[], parent: Group, id: string, input: State, config?: ResourceConfig) => {
 			const type = snakeCase([props.namespace, ...ns].join('_'))
 			const provider = `terraform:${props.namespace}:${config?.provider ?? 'default'}`
 			const meta = createMeta('resource', provider, parent, type, id, input, config)
-			const resource = createResourceProxy(key => {
+			const resource = createResourceProxy(getClass(type), key => {
 				if (typeof key === 'string') {
 					if (key === 'urn') {
 						return meta.urn
@@ -208,7 +244,7 @@ export const createTerraformProxy = (props: {
 			const provider = `terraform:${props.namespace}:${config?.provider ?? 'default'}`
 			const meta = createMeta('data', provider, parent, type, id, input, config)
 
-			const dataSource = createResourceProxy(key => {
+			const dataSource = createResourceProxy(getClass(type), key => {
 				if (typeof key === 'string') {
 					if (key === 'urn') {
 						return meta.urn

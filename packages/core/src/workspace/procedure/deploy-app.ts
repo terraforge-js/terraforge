@@ -99,7 +99,6 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 	const graph = new DependencyGraph()
-	const replacementDeletes = new Map<URN, NodeState>()
 
 	// -------------------------------------------------------
 
@@ -316,6 +315,56 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 								// Replace resource (optionally create before delete).
 
 								if (meta.config?.createBeforeReplace) {
+									// Validate dependents can handle the replacement before creating new resource.
+									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+										if (!isResource(dependentNode)) {
+											continue
+										}
+
+										const dependentMeta = getMeta(dependentNode)
+										if (!dependentMeta.dependencies.has(meta.urn)) {
+											continue
+										}
+
+										const dependentStackState = stackStates.get(dependentMeta.stack.urn)
+										const dependentState = dependentStackState?.nodes[dependentUrn]
+										if (!dependentStackState || !dependentState) {
+											continue
+										}
+
+										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
+										if (dependencyPaths.length === 0) {
+											continue
+										}
+
+										const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
+										if (dependentProvider.planResourceChange) {
+											const dependentPlan = await dependentProvider.planResourceChange({
+												type: dependentMeta.type,
+												priorState: dependentState.output,
+												proposedState: input,
+											})
+
+											if (dependentPlan.requiresReplacement) {
+												if (
+													!allowsDependentReplace(
+														dependentMeta.config?.replaceOnChanges,
+														dependencyPaths
+													)
+												) {
+													throw ResourceError.wrap(
+														dependentMeta.urn,
+														dependentMeta.type,
+														'update',
+														new Error(
+															`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+														)
+													)
+												}
+											}
+										}
+									}
+
 									// Create new output first; delete old output after dependents update.
 									const priorState = { ...nodeState }
 									newResourceState = await createResource(node, appState.idempotentToken!, input, opt)
@@ -326,7 +375,8 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									}
 
 									if (!meta.config?.retainOnDelete) {
-										replacementDeletes.set(meta.urn, priorState)
+										appState.pendingDeletes ??= {}
+										appState.pendingDeletes[meta.urn] = priorState
 									}
 								} else {
 									// Replace resource while safely detaching dependents first.
@@ -492,10 +542,11 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 	const errors = await graph.run()
 
-	if (errors.length === 0 && replacementDeletes.size > 0) {
-		for (const [urn, nodeState] of replacementDeletes.entries()) {
+	if (errors.length === 0 && appState.pendingDeletes) {
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
 			try {
 				await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
+				delete appState.pendingDeletes[urn]
 			} catch (error) {
 				if (error instanceof Error) {
 					errors.push(error)
@@ -503,6 +554,10 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 					errors.push(new Error(`${error}`))
 				}
 			}
+		}
+
+		if (Object.keys(appState.pendingDeletes).length === 0) {
+			delete appState.pendingDeletes
 		}
 	}
 

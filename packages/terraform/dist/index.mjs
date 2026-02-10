@@ -2240,7 +2240,12 @@ const retry = async (tries, cb) => {
 
 //#endregion
 //#region src/proxy.ts
-const createResourceProxy = (cb) => {
+const classMap = /* @__PURE__ */ new Map();
+const getClass = (type) => {
+	if (!classMap.has(type)) classMap.set(type, class {});
+	return classMap.get(type);
+};
+const createResourceProxy = (klass, cb) => {
 	return new Proxy({}, {
 		get(_, key) {
 			return cb(key);
@@ -2248,6 +2253,9 @@ const createResourceProxy = (cb) => {
 		set(_, key) {
 			if (typeof key === "string") throw new Error(`Cannot set property ${key} on read-only object.`);
 			throw new Error(`This object is read-only.`);
+		},
+		getPrototypeOf() {
+			return klass.prototype;
 		}
 	});
 };
@@ -2286,19 +2294,21 @@ const createRootProxy = (apply, get) => {
 		}
 	});
 };
-const createClassProxy = (construct, get) => {
-	return new Proxy(class {}, {
+const createClassProxy = (name, target, construct, get) => {
+	return new Proxy(target, {
 		construct(_, args) {
 			return construct(...args);
 		},
 		get(_, key) {
+			if (key === "prototype") return target.prototype;
+			if (key === "name") return name;
 			if (key === "get") return (...args) => {
 				return get(...args);
 			};
 		}
 	});
 };
-const createRecursiveProxy = ({ provider, install, uninstall, isInstalled, resource, dataSource }) => {
+const createRecursiveProxy = ({ provider, install, uninstall, isInstalled, class: klass, resource, dataSource }) => {
 	const findNextProxy = (ns, name) => {
 		if (name === name.toLowerCase()) return createNamespaceProxy((key) => {
 			return findNextProxy([...ns, name], key);
@@ -2306,7 +2316,7 @@ const createRecursiveProxy = ({ provider, install, uninstall, isInstalled, resou
 		else if (name.startsWith("get")) return (...args) => {
 			return dataSource([...ns, name.substring(3)], ...args);
 		};
-		else return createClassProxy((...args) => {
+		else return createClassProxy(pascalCase([...ns, name].join("-")), klass([...ns, name]), (...args) => {
 			return resource([...ns, name], ...args);
 		}, (...args) => {
 			return dataSource([...ns, name], ...args);
@@ -2345,10 +2355,13 @@ const createTerraformProxy = (props) => {
 				...installProps
 			});
 		},
+		class: (ns) => {
+			return getClass(snakeCase([props.namespace, ...ns].join("_")));
+		},
 		resource: (ns, parent, id, input, config) => {
 			const type = snakeCase([props.namespace, ...ns].join("_"));
 			const meta = createMeta("resource", `terraform:${props.namespace}:${config?.provider ?? "default"}`, parent, type, id, input, config);
-			const resource = createResourceProxy((key) => {
+			const resource = createResourceProxy(getClass(type), (key) => {
 				if (typeof key === "string") {
 					if (key === "urn") return meta.urn;
 					return meta.output((data) => data[key]);
@@ -2360,7 +2373,7 @@ const createTerraformProxy = (props) => {
 		dataSource: (ns, parent, id, input, config) => {
 			const type = snakeCase([props.namespace, ...ns].join("_"));
 			const meta = createMeta("data", `terraform:${props.namespace}:${config?.provider ?? "default"}`, parent, type, id, input, config);
-			const dataSource = createResourceProxy((key) => {
+			const dataSource = createResourceProxy(getClass(type), (key) => {
 				if (typeof key === "string") {
 					if (key === "urn") return meta.urn;
 					return meta.output((data) => data[key]);

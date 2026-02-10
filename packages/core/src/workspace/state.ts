@@ -8,6 +8,7 @@ export type AppState = {
 	version?: number
 	idempotentToken?: UUID
 	stacks: Record<URN, StackState>
+	pendingDeletes?: Record<URN, NodeState>
 }
 
 export type StackState = {

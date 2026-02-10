@@ -32,6 +32,12 @@ describe('Terraform Proxy API', () => {
 		expect(provider.Resource).toBeTypeOf('function')
 		expect(provider.ns.Resource).toBeTypeOf('function')
 		expect(provider.ns.ns.Resource).toBeTypeOf('function')
+
+		expect(provider.Resource.name).toBe('Resource')
+		expect(provider.ns.Resource.name).toBe('NsResource')
+		expect(provider.ns.ns.Resource.name).toBe('NsNsResource')
+
+		console.log(provider.Resource)
 	})
 
 	it('the get function on a resource should be a datasource function', () => {
@@ -47,6 +53,12 @@ describe('Terraform Proxy API', () => {
 		expect(isResource(resource)).toBe(true)
 		expect(isDataSource(resource)).toBe(false)
 		expect(resource.urn).toBeTypeOf('string')
+
+		expect(Object.getPrototypeOf(resource)).toBe(provider.Resource.prototype)
+		expect(resource instanceof provider.Resource).toBe(true)
+
+		expect(Object.getPrototypeOf(resource)).not.toBe(provider.DataSource.prototype)
+		expect(resource instanceof provider.DataSource).toBe(false)
 	})
 
 	it('capitalized access with the "get" prefix should be a datasource function', () => {
@@ -60,5 +72,11 @@ describe('Terraform Proxy API', () => {
 		expect(isResource(dataSource)).toBe(false)
 		expect(isDataSource(dataSource)).toBe(true)
 		expect(dataSource.urn).toBeTypeOf('string')
+
+		expect(Object.getPrototypeOf(dataSource)).toBe(provider.DataSource.prototype)
+		expect(dataSource instanceof provider.DataSource).toBe(true)
+
+		expect(Object.getPrototypeOf(dataSource)).not.toBe(provider.Resource.prototype)
+		expect(dataSource instanceof provider.Resource).toBe(false)
 	})
 })

@@ -623,6 +623,16 @@ const deleteApp = async (app, opt) => {
 		delete stackState.nodes[urn];
 	});
 	const errors = await graph.run();
+	if (errors.length === 0 && appState.pendingDeletes) {
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) try {
+			await deleteResource(appState.idempotentToken, urn, nodeState, opt);
+			delete appState.pendingDeletes[urn];
+		} catch (error) {
+			if (error instanceof Error) errors.push(error);
+			else errors.push(/* @__PURE__ */ new Error(`${error}`));
+		}
+		if (Object.keys(appState.pendingDeletes).length === 0) delete appState.pendingDeletes;
+	}
 	removeEmptyStackStates(appState);
 	delete appState.idempotentToken;
 	await opt.backend.state.update(app.urn, appState);
@@ -813,7 +823,8 @@ const updateResource = async (resource, appToken, priorInputState, priorOutputSt
 	const idempotantToken = createIdempotantToken(appToken, meta.urn, "update");
 	let result;
 	debug$2(meta.type);
-	debug$2(proposedState);
+	debug$2("prior state", priorOutputState);
+	debug$2("proposed state", proposedState);
 	try {
 		await opt.hooks?.beforeResourceUpdate?.({
 			urn: resource.urn,
@@ -883,7 +894,6 @@ const deployApp = async (app, opt) => {
 	}
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10);
 	const graph = new DependencyGraph();
-	const replacementDeletes = /* @__PURE__ */ new Map();
 	const allNodes = {};
 	for (const stackState of Object.values(appState.stacks)) for (const [urn, nodeState] of entries(stackState.nodes)) allNodes[urn] = nodeState;
 	for (const stack of filteredOutStacks) {
@@ -966,10 +976,33 @@ const deployApp = async (app, opt) => {
 							let newResourceState;
 							const ignoreReplace = forcedUpdateDependents.has(meta$1.urn);
 							if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
+								for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+									if (!isResource(dependentNode)) continue;
+									const dependentMeta = getMeta(dependentNode);
+									if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
+									const dependentStackState = stackStates.get(dependentMeta.stack.urn);
+									const dependentState = dependentStackState?.nodes[dependentUrn];
+									if (!dependentStackState || !dependentState) continue;
+									const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
+									if (dependencyPaths.length === 0) continue;
+									const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
+									if (dependentProvider.planResourceChange) {
+										if ((await dependentProvider.planResourceChange({
+											type: dependentMeta.type,
+											priorState: dependentState.output,
+											proposedState: input
+										})).requiresReplacement) {
+											if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+										}
+									}
+								}
 								const priorState = { ...nodeState };
 								newResourceState = await createResource(node, appState.idempotentToken, input, opt);
 								if (newResourceState.output) meta$1.resolve(newResourceState.output);
-								if (!meta$1.config?.retainOnDelete) replacementDeletes.set(meta$1.urn, priorState);
+								if (!meta$1.config?.retainOnDelete) {
+									appState.pendingDeletes ??= {};
+									appState.pendingDeletes[meta$1.urn] = priorState;
+								}
 							} else {
 								for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
 									if (!isResource(dependentNode)) continue;
@@ -1028,11 +1061,15 @@ const deployApp = async (app, opt) => {
 		}
 	}
 	const errors = await graph.run();
-	if (errors.length === 0 && replacementDeletes.size > 0) for (const [urn, nodeState] of replacementDeletes.entries()) try {
-		await deleteResource(appState.idempotentToken, urn, nodeState, opt);
-	} catch (error) {
-		if (error instanceof Error) errors.push(error);
-		else errors.push(/* @__PURE__ */ new Error(`${error}`));
+	if (errors.length === 0 && appState.pendingDeletes) {
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) try {
+			await deleteResource(appState.idempotentToken, urn, nodeState, opt);
+			delete appState.pendingDeletes[urn];
+		} catch (error) {
+			if (error instanceof Error) errors.push(error);
+			else errors.push(/* @__PURE__ */ new Error(`${error}`));
+		}
+		if (Object.keys(appState.pendingDeletes).length === 0) delete appState.pendingDeletes;
 	}
 	removeEmptyStackStates(appState);
 	delete appState.idempotentToken;
@@ -1135,11 +1172,12 @@ const filterStateToMatchConfig = (state, config) => {
 };
 const status = async (app, opt) => {
 	const appState = await opt.backend.state.get(app.urn);
-	const resources = [];
+	const stacks = [];
 	const configuredUrns = /* @__PURE__ */ new Set();
 	for (const stack of app.stacks) for (const node of stack.nodes) configuredUrns.add(getMeta(node).urn);
 	for (const stack of app.stacks) {
 		const stackState = appState?.stacks[stack.urn];
+		const resources = [];
 		for (const node of stack.nodes) {
 			const meta = getMeta(node);
 			const nodeState = stackState?.nodes[meta.urn];
@@ -1172,18 +1210,31 @@ const status = async (app, opt) => {
 				status: "stale"
 			});
 		}
+		stacks.push({
+			name: stack.name,
+			urn: stack.urn,
+			resources
+		});
 	}
 	if (appState) {
 		const configuredStackUrns = new Set(app.stacks.map((s) => s.urn));
-		for (const [stackUrn, stackState] of Object.entries(appState.stacks)) if (!configuredStackUrns.has(stackUrn)) for (const [urn, nodeState] of Object.entries(stackState.nodes)) resources.push({
-			urn,
-			type: nodeState.type,
-			provider: nodeState.provider,
-			tag: nodeState.tag,
-			status: "stale"
-		});
+		for (const [stackUrn, stackState] of Object.entries(appState.stacks)) if (!configuredStackUrns.has(stackUrn)) {
+			const resources = [];
+			for (const [urn, nodeState] of Object.entries(stackState.nodes)) resources.push({
+				urn,
+				type: nodeState.type,
+				provider: nodeState.provider,
+				tag: nodeState.tag,
+				status: "stale"
+			});
+			stacks.push({
+				name: stackState.name,
+				urn: stackUrn,
+				resources
+			});
+		}
 	}
-	return resources;
+	return stacks;
 };
 
 //#endregion

@@ -77,6 +77,28 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	const errors = await graph.run()
 
 	// -------------------------------------------------------------------
+	// Process pending deletes from previous failed createBeforeReplace
+
+	if (errors.length === 0 && appState.pendingDeletes) {
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+			try {
+				await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
+				delete appState.pendingDeletes[urn]
+			} catch (error) {
+				if (error instanceof Error) {
+					errors.push(error)
+				} else {
+					errors.push(new Error(`${error}`))
+				}
+			}
+		}
+
+		if (Object.keys(appState.pendingDeletes).length === 0) {
+			delete appState.pendingDeletes
+		}
+	}
+
+	// -------------------------------------------------------------------
 	// Remove empty stacks from app state
 
 	removeEmptyStackStates(appState)

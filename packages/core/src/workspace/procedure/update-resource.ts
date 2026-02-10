@@ -28,7 +28,8 @@ export const updateResource = async (
 	let result
 
 	debug(meta.type)
-	debug(proposedState)
+	debug('prior state', priorOutputState)
+	debug('proposed state', proposedState)
 
 	try {
 		await opt.hooks?.beforeResourceUpdate?.({
