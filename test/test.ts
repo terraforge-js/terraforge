@@ -29,8 +29,8 @@ const workspace = new WorkSpace({
 })
 
 const app = new App('app')
-const stack = new Stack(app, 'stack')
-const group = new Group(stack, 'stack', 'lol')
+// const stack = new Stack(app, 'stack')
+// const group = new Group(stack, 'stack', 'lol')
 
 // const bucket = new aws.s3.Bucket(
 // 	group,
@@ -51,7 +51,7 @@ const group = new Group(stack, 'stack', 'lol')
 
 await workspace.deploy(app)
 
-console.log('RUN', await activityLog.tail(app.urn))
+console.log('Logs:', await activityLog.tail(app.urn))
 
 // await provider.createResource({
 // 	'type': 'aws_s3_bucket',

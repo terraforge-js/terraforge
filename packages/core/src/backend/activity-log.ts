@@ -7,7 +7,7 @@ export type LogProps = {
 
 export type Log = LogProps & {
 	user?: string
-	date?: number
+	date: number
 }
 
 export type ActivityLogBackend = {

@@ -18,13 +18,15 @@ npm i @terraforge/core @terraforge/terraform @terraforge/aws
 ## Example
 
 First, you need to create a workspace instance and pass in the cloud providers that you will use.
-We also need to give it a lock provider & state provider.
+We also need to give it a lock backend & state backend.
 
 - A cloud provider is used to create resources on a specific cloud provider. We have built-in cloud providers for AWS resources, but you could simply add your own as well.
 
-- The state provider is used for storing the latest deployment state.
+- The state backend is used for storing the latest deployment state.
 
-- The lock provider is used for acquiring a lock when you deploy your app. This will guarantee that multiple people can never deploy the same application at the same time.
+- The lock backend is used for acquiring a lock when you deploy your app. This will guarantee that multiple people can never deploy the same application at the same time.
+
+- The activity log backend is used for storing the activity log when every you deploy / delete your app.
 
 In this example, we will use a local file lock & state provider.
 

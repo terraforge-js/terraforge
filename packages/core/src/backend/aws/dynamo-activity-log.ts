@@ -11,7 +11,7 @@ type Props = {
 	user?: string
 }
 
-export class DynamoDBActivityLogBackend implements ActivityLogBackend {
+export class DynamoActivityLogBackend implements ActivityLogBackend {
 	protected client: DynamoDB
 
 	constructor(private props: Props) {

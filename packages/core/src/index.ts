@@ -18,8 +18,8 @@ export * from './backend/memory/lock.ts'
 export * from './backend/file/activity-log.ts'
 export * from './backend/file/state.ts'
 export * from './backend/file/lock.ts'
-export * from './backend/aws/dynamodb-activity-log.ts'
-export * from './backend/aws/dynamodb-lock.ts'
+export * from './backend/aws/dynamo-activity-log.ts'
+export * from './backend/aws/dynamo-lock.ts'
 export * from './backend/aws/s3-state.ts'
 
 // types

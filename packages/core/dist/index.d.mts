@@ -215,7 +215,7 @@ type LogProps = {
 };
 type Log = LogProps & {
   user?: string;
-  date?: number;
+  date: number;
 };
 type ActivityLogBackend = {
   log(urn: URN, log: LogProps): Promise<void>;
@@ -453,14 +453,14 @@ declare class FileLockBackend implements LockBackend {
   lock(urn: URN): Promise<() => Promise<void>>;
 }
 //#endregion
-//#region src/backend/aws/dynamodb-activity-log.d.ts
+//#region src/backend/aws/dynamo-activity-log.d.ts
 type Props$2 = {
   credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
   region: string;
   tableName: string;
   user?: string;
 };
-declare class DynamoDBActivityLogBackend implements ActivityLogBackend {
+declare class DynamoActivityLogBackend implements ActivityLogBackend {
   private props;
   protected client: DynamoDB;
   constructor(props: Props$2);
@@ -468,7 +468,7 @@ declare class DynamoDBActivityLogBackend implements ActivityLogBackend {
   tail(urn: URN, limit?: number): Promise<Log[]>;
 }
 //#endregion
-//#region src/backend/aws/dynamodb-lock.d.ts
+//#region src/backend/aws/dynamo-lock.d.ts
 type Props$1 = {
   credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
   region: string;
@@ -528,4 +528,4 @@ type CustomResourceProvider = Partial<{
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoDBActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

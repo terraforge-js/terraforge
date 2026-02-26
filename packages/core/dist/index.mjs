@@ -1464,8 +1464,8 @@ var FileLockBackend = class {
 };
 
 //#endregion
-//#region src/backend/aws/dynamodb-activity-log.ts
-var DynamoDBActivityLogBackend = class {
+//#region src/backend/aws/dynamo-activity-log.ts
+var DynamoActivityLogBackend = class {
 	client;
 	constructor(props) {
 		this.props = props;
@@ -1497,7 +1497,7 @@ var DynamoDBActivityLogBackend = class {
 };
 
 //#endregion
-//#region src/backend/aws/dynamodb-lock.ts
+//#region src/backend/aws/dynamo-lock.ts
 var DynamoLockBackend = class {
 	client;
 	constructor(props) {
@@ -1691,4 +1691,4 @@ const createCustomProvider = (providerId, resourceProviders) => {
 };
 
 //#endregion
-export { App, AppError, DynamoDBActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, Group, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, Output, ResourceAlreadyExists, ResourceError, ResourceNotFound, S3StateBackend, Stack, WorkSpace, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { App, AppError, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, Group, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, Output, ResourceAlreadyExists, ResourceError, ResourceNotFound, S3StateBackend, Stack, WorkSpace, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
