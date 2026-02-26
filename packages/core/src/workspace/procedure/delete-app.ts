@@ -10,6 +10,17 @@ import { ProcedureOptions, WorkSpaceOptions } from '../workspace.ts'
 import { deleteResource } from './delete-resource.ts'
 
 export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
+	// -------------------------------------------------------
+	// Add a deploy log
+
+	await opt.backend.activityLog?.log(app.urn, {
+		action: 'delete',
+		filters: opt.filters,
+	})
+
+	// -------------------------------------------------------
+	// Get latest state
+
 	const latestState = await opt.backend.state.get(app.urn)
 
 	if (!latestState) {

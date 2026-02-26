@@ -15,7 +15,7 @@ export class FileStateBackend implements StateBackend {
 	) {}
 
 	private stateFile(urn: URN) {
-		return join(this.props.dir, `${urn}.json`)
+		return join(this.props.dir, `${urn}.state.json`)
 	}
 
 	private async mkdir() {

@@ -1,5 +1,5 @@
-import { S3Client } from "@aws-sdk/client-s3";
 import { DynamoDB } from "@aws-sdk/client-dynamodb";
+import { S3Client } from "@aws-sdk/client-s3";
 import { UUID } from "node:crypto";
 import { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
 
@@ -208,6 +208,20 @@ type StateBackend = {
   delete(urn: URN): Promise<void>;
 };
 //#endregion
+//#region src/backend/activity-log.d.ts
+type LogProps = {
+  action: 'deploy' | 'delete';
+  filters?: string[];
+};
+type Log = LogProps & {
+  user?: string;
+  date?: number;
+};
+type ActivityLogBackend = {
+  log(urn: URN, log: LogProps): Promise<void>;
+  tail(urn: URN): Promise<Log[]>;
+};
+//#endregion
 //#region src/provider.d.ts
 type CreateProps<T = State> = {
   type: string;
@@ -319,6 +333,7 @@ type WorkSpaceOptions = {
   backend: {
     state: StateBackend;
     lock: LockBackend;
+    activityLog?: ActivityLogBackend;
   };
   hooks?: Hooks;
 };
@@ -367,6 +382,19 @@ declare class AppError extends Error {
 declare class ResourceNotFound extends Error {}
 declare class ResourceAlreadyExists extends Error {}
 //#endregion
+//#region src/backend/memory/activity-log.d.ts
+type Props$4 = {
+  user?: string;
+};
+declare class MemoryActivityLogBackend implements ActivityLogBackend {
+  private props;
+  protected groups: Map<`urn:${string}`, Log[]>;
+  constructor(props?: Props$4);
+  log(urn: URN, log: LogProps): Promise<void>;
+  private getLogGroup;
+  tail(urn: URN, limit?: number): Promise<Log[]>;
+}
+//#endregion
 //#region src/backend/memory/state.d.ts
 declare class MemoryStateBackend implements StateBackend {
   protected states: Map<`urn:${string}`, AppState>;
@@ -383,6 +411,20 @@ declare class MemoryLockBackend implements LockBackend {
   locked(urn: URN): Promise<boolean>;
   lock(urn: URN): Promise<() => Promise<void>>;
   clear(): void;
+}
+//#endregion
+//#region src/backend/file/activity-log.d.ts
+type Props$3 = {
+  user?: string;
+  dir: string;
+};
+declare class FileActivityLogBackend implements ActivityLogBackend {
+  private props;
+  constructor(props: Props$3);
+  private logFile;
+  private mkdir;
+  log(urn: URN, log: LogProps): Promise<void>;
+  tail(urn: URN, limit?: number): Promise<Log[]>;
 }
 //#endregion
 //#region src/backend/file/state.d.ts
@@ -411,23 +453,23 @@ declare class FileLockBackend implements LockBackend {
   lock(urn: URN): Promise<() => Promise<void>>;
 }
 //#endregion
-//#region src/backend/aws/s3-state.d.ts
-type Props$1 = {
+//#region src/backend/aws/dynamodb-activity-log.d.ts
+type Props$2 = {
   credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
   region: string;
-  bucket: string;
+  tableName: string;
+  user?: string;
 };
-declare class S3StateBackend implements StateBackend {
+declare class DynamoDBActivityLogBackend implements ActivityLogBackend {
   private props;
-  protected client: S3Client;
-  constructor(props: Props$1);
-  get(urn: URN): Promise<any>;
-  update(urn: URN, state: AppState): Promise<void>;
-  delete(urn: URN): Promise<void>;
+  protected client: DynamoDB;
+  constructor(props: Props$2);
+  log(urn: URN, log: LogProps): Promise<void>;
+  tail(urn: URN, limit?: number): Promise<Log[]>;
 }
 //#endregion
 //#region src/backend/aws/dynamodb-lock.d.ts
-type Props = {
+type Props$1 = {
   credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
   region: string;
   tableName: string;
@@ -435,10 +477,25 @@ type Props = {
 declare class DynamoLockBackend implements LockBackend {
   private props;
   protected client: DynamoDB;
-  constructor(props: Props);
+  constructor(props: Props$1);
   insecureReleaseLock(urn: URN): Promise<void>;
   locked(urn: URN): Promise<boolean>;
   lock(urn: URN): Promise<() => Promise<void>>;
+}
+//#endregion
+//#region src/backend/aws/s3-state.d.ts
+type Props = {
+  credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
+  region: string;
+  bucket: string;
+};
+declare class S3StateBackend implements StateBackend {
+  private props;
+  protected client: S3Client;
+  constructor(props: Props);
+  get(urn: URN): Promise<any>;
+  update(urn: URN, state: AppState): Promise<void>;
+  delete(urn: URN): Promise<void>;
 }
 //#endregion
 //#region src/helpers.d.ts
@@ -471,4 +528,4 @@ type CustomResourceProvider = Partial<{
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoDBActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

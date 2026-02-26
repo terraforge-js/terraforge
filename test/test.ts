@@ -1,53 +1,96 @@
 import { aws } from '@terraforge/aws'
-import { App, Group, Resource, Stack } from '@terraforge/core'
+// import { cloudflare } from '@terraforge/cloudflare'
+import {
+	App,
+	FileActivityLogBackend,
+	FileLockBackend,
+	FileStateBackend,
+	Group,
+	Stack,
+	WorkSpace,
+} from '@terraforge/core'
+
+const dir = './test'
+const activityLog = new FileActivityLogBackend({ dir, user: 'unknown' })
+
+const workspace = new WorkSpace({
+	backend: {
+		activityLog,
+		state: new FileStateBackend({ dir }),
+		lock: new FileLockBackend({ dir }),
+	},
+	providers: [
+		aws({
+			region: 'us-east-1',
+			profile: 'default',
+			// accessKey: ''
+		}),
+	],
+})
 
 const app = new App('app')
 const stack = new Stack(app, 'stack')
 const group = new Group(stack, 'stack', 'lol')
 
-await aws.install()
+// const bucket = new aws.s3.Bucket(
+// 	group,
+// 	'bucket',
+// 	{
+// 		bucket: 'name-1',
+// 	},
+// 	{
+// 		replaceOnChanges: ['bucket'],
+// 		createBeforeReplace: true,
+// 	}
+// )
 
-if (await aws.isInstalled()) {
-	console.log('AWS is installed')
-} else {
-	console.log('AWS is not installed')
-}
+// const item = new aws.s3.BucketObject(group, 'object', {
+// 	bucket: bucket.bucket,
+// 	key: 'item',
+// })
 
-// await aws.install()
+await workspace.deploy(app)
 
-const vpc = new aws.Vpc(group, 'vpc', {})
-const bucket1 = new aws.s3.Bucket(group, 'bucket-1', { bucket: 'my-special-name-123' })
-const bucket2 = aws.s3.getBucket(group, 'bucket-2', { bucket: 'my-special-name-123' })
-const param = aws.ssm.getParameter(
-	stack,
-	'param',
-	{ name: 'my-param-name' },
-	{
-		dependsOn: [vpc, bucket1, bucket2],
-	}
-)
+console.log('RUN', await activityLog.tail(app.urn))
 
-bucket1.urn
-vpc.urn
-param.urn
+// await provider.createResource({
+// 	'type': 'aws_s3_bucket',
+// 	'state': {}
+// })
 
-param.withDecryption.pipe(value => {
-	console.log('Parameter value:', value)
-})
+// const vpc = new aws.Vpc(group, 'vpc', {})
+// const bucket1 = new aws.s3.Bucket(group, 'bucket-1', { bucket: 'my-special-name-123' })
+// const bucket2 = aws.s3.getBucket(group, 'bucket-2', { bucket: 'my-special-name-123' })
+// const param = aws.ssm.getParameter(
+// 	stack,
+// 	'param',
+// 	{ name: 'my-param-name' },
+// 	{
+// 		dependsOn: [vpc, bucket1, bucket2],
+// 	}
+// )
 
-param.id.pipe(id => {
-	console.log('Parameter ID:', id)
-})
+// bucket1.urn
+// vpc.urn
+// param.urn
 
-class MyClass {
-	readonly id = '1'
-	// declare [key: string]: unknown
-}
+// param.withDecryption.pipe(value => {
+// 	console.log('Parameter value:', value)
+// })
 
-function test(params: Record<string, any>) {
-	console.log('Test function called')
-}
+// param.id.pipe(id => {
+// 	console.log('Parameter ID:', id)
+// })
 
-test(new MyClass())
+// class MyClass {
+// 	readonly id = '1'
+// 	// declare [key: string]: unknown
+// }
 
-// const lol = new Resource()
+// function test(params: Record<string, any>) {
+// 	console.log('Test function called')
+// }
+
+// test(new MyClass())
+
+// // const lol = new Resource()

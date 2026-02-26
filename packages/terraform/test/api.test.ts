@@ -26,6 +26,8 @@ describe('Terraform Proxy API', () => {
 
 	it('lowercase access on the provider should be a namespace', () => {
 		expect(provider.ns).toBeTypeOf('object')
+		expect(provider.ns.ns).toBeTypeOf('object')
+		expect(provider.ns.ns.ns).toBeTypeOf('object')
 	})
 
 	it('capitalized access on the provider should be a resource class', () => {
@@ -36,8 +38,6 @@ describe('Terraform Proxy API', () => {
 		expect(provider.Resource.name).toBe('Resource')
 		expect(provider.ns.Resource.name).toBe('NsResource')
 		expect(provider.ns.ns.Resource.name).toBe('NsNsResource')
-
-		console.log(provider.Resource)
 	})
 
 	it('the get function on a resource should be a datasource function', () => {
@@ -48,6 +48,7 @@ describe('Terraform Proxy API', () => {
 
 	it('a resource instance should be a node', () => {
 		const resource = new provider.Resource(stack, 'resource', {})
+
 		expect(resource).toBeTypeOf('object')
 		expect(isNode(resource)).toBe(true)
 		expect(isResource(resource)).toBe(true)
@@ -67,6 +68,7 @@ describe('Terraform Proxy API', () => {
 
 	it('a datasource instance should be a node', () => {
 		const dataSource = provider.getDataSource(stack, 'dataSource', {})
+
 		expect(dataSource).toBeTypeOf('object')
 		expect(isNode(dataSource)).toBe(true)
 		expect(isResource(dataSource)).toBe(false)

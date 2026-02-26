@@ -32,6 +32,17 @@ const debug = createDebugger('Deploy App')
 export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
 	debug(app.name, 'start')
 
+	// -------------------------------------------------------
+	// Add a deploy log
+
+	await opt.backend.activityLog?.log(app.urn, {
+		action: 'deploy',
+		filters: opt.filters,
+	})
+
+	// -------------------------------------------------------
+	// Get latest state
+
 	const latestState = await opt.backend.state.get(app.urn)
 
 	// -------------------------------------------------------

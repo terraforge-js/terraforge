@@ -1,0 +1,37 @@
+{
+	"name": "@terraforge/cloudflare",
+	"version": "5.17.0",
+	"provider": {
+		"org": "cloudflare",
+		"type": "cloudflare",
+		"version": "5.17.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/terraforge-js/terraforge.git"
+	},
+	"bugs": {
+		"url": "https://github.com/terraforge-js/terraforge/issues"
+	},
+	"type": "module",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"scripts": {
+		"build": "bun ../terraform/cli/build-package",
+		"prepublishOnly": "bun run build"
+	},
+	"peerDependencies": {
+		"@terraforge/terraform": "workspace:*",
+		"@terraforge/core": "workspace:*"
+	},
+	"files": [
+		"dist"
+	],
+	"license": "MIT"
+}

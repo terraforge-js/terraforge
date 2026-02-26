@@ -12,12 +12,15 @@ export { createDebugger, enableDebug } from './debug.ts'
 export { WorkSpace } from './workspace/workspace.ts'
 export * from './workspace/error.ts'
 
+export * from './backend/memory/activity-log.ts'
 export * from './backend/memory/state.ts'
 export * from './backend/memory/lock.ts'
+export * from './backend/file/activity-log.ts'
 export * from './backend/file/state.ts'
 export * from './backend/file/lock.ts'
-export * from './backend/aws/s3-state.ts'
+export * from './backend/aws/dynamodb-activity-log.ts'
 export * from './backend/aws/dynamodb-lock.ts'
+export * from './backend/aws/s3-state.ts'
 
 // types
 export type { URN } from './urn.ts'
@@ -32,6 +35,7 @@ export type { OptionalOutput } from './output.ts'
 export type { WorkSpaceOptions, ProcedureOptions } from './workspace/workspace.ts'
 export type { ResourceStatus, ResourceStatusInfo, StackStatusInfo } from './workspace/procedure/status.ts'
 
+export type * from './backend/activity-log.ts'
 export type * from './backend/state.ts'
 export type * from './backend/lock.ts'
 

@@ -3,6 +3,7 @@ import { App } from '../app.ts'
 import { LockBackend } from '../backend/lock.ts'
 import { StateBackend } from '../backend/state.ts'
 // import { findInputDeps } from '../input.ts'
+import { ActivityLogBackend } from '../backend/activity-log.ts'
 import { Provider } from '../provider.ts'
 import { Hooks } from './hooks.ts'
 import { lockApp } from './lock.ts'
@@ -23,6 +24,7 @@ export type WorkSpaceOptions = {
 	backend: {
 		state: StateBackend
 		lock: LockBackend
+		activityLog?: ActivityLogBackend
 	}
 	hooks?: Hooks
 }

@@ -4,12 +4,12 @@ import { DirectedGraph } from "graphology";
 import { topologicalGenerations, willCreateCycle } from "graphology-dag";
 import { v5 } from "uuid";
 import { get } from "get-wild";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { lock } from "proper-lockfile";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { DynamoDB } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
 
 //#region src/node.ts
@@ -605,6 +605,10 @@ const deleteResource = async (appToken, urn, state, opt) => {
 //#endregion
 //#region src/workspace/procedure/delete-app.ts
 const deleteApp = async (app, opt) => {
+	await opt.backend.activityLog?.log(app.urn, {
+		action: "delete",
+		filters: opt.filters
+	});
 	const latestState = await opt.backend.state.get(app.urn);
 	if (!latestState) throw new AppError(app.name, [], `App already deleted: ${app.name}`);
 	const appState = migrateAppState(latestState);
@@ -863,6 +867,10 @@ const updateResource = async (resource, appToken, priorInputState, priorOutputSt
 const debug$1 = createDebugger("Deploy App");
 const deployApp = async (app, opt) => {
 	debug$1(app.name, "start");
+	await opt.backend.activityLog?.log(app.urn, {
+		action: "deploy",
+		filters: opt.filters
+	});
 	const appState = migrateAppState(await opt.backend.state.get(app.urn) ?? {
 		name: app.name,
 		stacks: {}
@@ -1305,6 +1313,29 @@ var WorkSpace = class {
 };
 
 //#endregion
+//#region src/backend/memory/activity-log.ts
+var MemoryActivityLogBackend = class {
+	groups = /* @__PURE__ */ new Map();
+	constructor(props = {}) {
+		this.props = props;
+	}
+	async log(urn, log) {
+		this.getLogGroup(urn).push({
+			user: this.props.user,
+			date: Date.now(),
+			...log
+		});
+	}
+	getLogGroup(urn) {
+		if (!this.groups.has(urn)) this.groups.set(urn, []);
+		return this.groups.get(urn);
+	}
+	async tail(urn, limit = 10) {
+		return this.getLogGroup(urn).slice(-limit);
+	}
+};
+
+//#endregion
 //#region src/backend/memory/state.ts
 var MemoryStateBackend = class {
 	states = /* @__PURE__ */ new Map();
@@ -1346,6 +1377,34 @@ var MemoryLockBackend = class {
 };
 
 //#endregion
+//#region src/backend/file/activity-log.ts
+var FileActivityLogBackend = class {
+	constructor(props) {
+		this.props = props;
+	}
+	logFile(urn) {
+		return join(this.props.dir, `${urn}.log.jsonl`);
+	}
+	async mkdir() {
+		await mkdir(this.props.dir, { recursive: true });
+	}
+	async log(urn, log) {
+		const json = JSON.stringify({
+			user: this.props.user,
+			date: Date.now(),
+			...log
+		});
+		await this.mkdir();
+		await appendFile(this.logFile(urn), `${json}\n`);
+	}
+	async tail(urn, limit = 10) {
+		const file$1 = this.logFile(urn);
+		if (!(await stat(file$1)).isFile()) return [];
+		return (await readFile(file$1, "utf8")).split("\n").filter(Boolean).slice(-limit).map((line) => JSON.parse(line));
+	}
+};
+
+//#endregion
 //#region src/backend/file/state.ts
 const debug = createDebugger("State");
 var FileStateBackend = class {
@@ -1353,7 +1412,7 @@ var FileStateBackend = class {
 		this.props = props;
 	}
 	stateFile(urn) {
-		return join(this.props.dir, `${urn}.json`);
+		return join(this.props.dir, `${urn}.state.json`);
 	}
 	async mkdir() {
 		await mkdir(this.props.dir, { recursive: true });
@@ -1405,40 +1464,35 @@ var FileLockBackend = class {
 };
 
 //#endregion
-//#region src/backend/aws/s3-state.ts
-var S3StateBackend = class {
+//#region src/backend/aws/dynamodb-activity-log.ts
+var DynamoDBActivityLogBackend = class {
 	client;
 	constructor(props) {
 		this.props = props;
-		this.client = new S3Client(props);
+		this.client = new DynamoDB(props);
 	}
-	async get(urn) {
-		let result;
-		try {
-			result = await this.client.send(new GetObjectCommand({
-				Bucket: this.props.bucket,
-				Key: `${urn}.state`
-			}));
-		} catch (error) {
-			if (error instanceof S3ServiceException && error.name === "NoSuchKey") return;
-			throw error;
-		}
-		if (!result.Body) return;
-		const body = await result.Body.transformToString("utf8");
-		return JSON.parse(body);
+	async log(urn, log) {
+		await this.client.putItem({
+			TableName: this.props.tableName,
+			Item: marshall({
+				urn,
+				user: this.props.user,
+				date: Date.now(),
+				...log
+			})
+		});
 	}
-	async update(urn, state) {
-		await this.client.send(new PutObjectCommand({
-			Bucket: this.props.bucket,
-			Key: `${urn}.state`,
-			Body: JSON.stringify(state)
-		}));
-	}
-	async delete(urn) {
-		await this.client.send(new DeleteObjectCommand({
-			Bucket: this.props.bucket,
-			Key: `${urn}.state`
-		}));
+	async tail(urn, limit = 10) {
+		return (await this.client.query({
+			TableName: this.props.tableName,
+			KeyConditionExpression: "#urn = :urn",
+			ExpressionAttributeNames: { "#urn": "urn" },
+			ExpressionAttributeValues: { ":urn": marshall(urn) },
+			ScanIndexForward: false,
+			Limit: limit
+		})).Items?.map((item) => {
+			return unmarshall(item);
+		}) ?? [];
 	}
 };
 
@@ -1486,6 +1540,44 @@ var DynamoLockBackend = class {
 				ConditionExpression: "#lock = :id"
 			});
 		};
+	}
+};
+
+//#endregion
+//#region src/backend/aws/s3-state.ts
+var S3StateBackend = class {
+	client;
+	constructor(props) {
+		this.props = props;
+		this.client = new S3Client(props);
+	}
+	async get(urn) {
+		let result;
+		try {
+			result = await this.client.send(new GetObjectCommand({
+				Bucket: this.props.bucket,
+				Key: `${urn}.state`
+			}));
+		} catch (error) {
+			if (error instanceof S3ServiceException && error.name === "NoSuchKey") return;
+			throw error;
+		}
+		if (!result.Body) return;
+		const body = await result.Body.transformToString("utf8");
+		return JSON.parse(body);
+	}
+	async update(urn, state) {
+		await this.client.send(new PutObjectCommand({
+			Bucket: this.props.bucket,
+			Key: `${urn}.state`,
+			Body: JSON.stringify(state)
+		}));
+	}
+	async delete(urn) {
+		await this.client.send(new DeleteObjectCommand({
+			Bucket: this.props.bucket,
+			Key: `${urn}.state`
+		}));
 	}
 };
 
@@ -1599,4 +1691,4 @@ const createCustomProvider = (providerId, resourceProviders) => {
 };
 
 //#endregion
-export { App, AppError, DynamoLockBackend, FileLockBackend, FileStateBackend, Future, Group, MemoryLockBackend, MemoryStateBackend, Output, ResourceAlreadyExists, ResourceError, ResourceNotFound, S3StateBackend, Stack, WorkSpace, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { App, AppError, DynamoDBActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, Group, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, Output, ResourceAlreadyExists, ResourceError, ResourceNotFound, S3StateBackend, Stack, WorkSpace, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
