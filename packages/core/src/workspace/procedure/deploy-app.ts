@@ -327,53 +327,61 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 								if (meta.config?.createBeforeReplace) {
 									// Validate dependents can handle the replacement before creating new resource.
-									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
-										if (!isResource(dependentNode)) {
-											continue
-										}
+									meta.resolve(input)
 
-										const dependentMeta = getMeta(dependentNode)
-										if (!dependentMeta.dependencies.has(meta.urn)) {
-											continue
-										}
+									try {
+										for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+											if (!isResource(dependentNode)) {
+												continue
+											}
 
-										const dependentStackState = stackStates.get(dependentMeta.stack.urn)
-										const dependentState = dependentStackState?.nodes[dependentUrn]
-										if (!dependentStackState || !dependentState) {
-											continue
-										}
+											const dependentMeta = getMeta(dependentNode)
+											if (!dependentMeta.dependencies.has(meta.urn)) {
+												continue
+											}
 
-										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
-										if (dependencyPaths.length === 0) {
-											continue
-										}
+											const dependentStackState = stackStates.get(dependentMeta.stack.urn)
+											const dependentState = dependentStackState?.nodes[dependentUrn]
+											if (!dependentStackState || !dependentState) {
+												continue
+											}
 
-										const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
-										if (dependentProvider.planResourceChange) {
-											const dependentPlan = await dependentProvider.planResourceChange({
-												type: dependentMeta.type,
-												priorState: dependentState.output,
-												proposedState: input,
-											})
+											const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
+											if (dependencyPaths.length === 0) {
+												continue
+											}
 
-											if (dependentPlan.requiresReplacement) {
-												if (
-													!allowsDependentReplace(
-														dependentMeta.config?.replaceOnChanges,
-														dependencyPaths
-													)
-												) {
-													throw ResourceError.wrap(
-														dependentMeta.urn,
-														dependentMeta.type,
-														'update',
-														new Error(
-															`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+											const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
+											if (dependentProvider.planResourceChange) {
+												const dependentProposedInput = await resolveInputs(dependentMeta.input)
+
+												const dependentPlan = await dependentProvider.planResourceChange({
+													type: dependentMeta.type,
+													priorState: dependentState.output,
+													proposedState: dependentProposedInput,
+												})
+
+												if (dependentPlan.requiresReplacement) {
+													if (
+														!allowsDependentReplace(
+															dependentMeta.config?.replaceOnChanges,
+															dependencyPaths
 														)
-													)
+													) {
+														throw ResourceError.wrap(
+															dependentMeta.urn,
+															dependentMeta.type,
+															'update',
+															new Error(
+																`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+															)
+														)
+													}
 												}
 											}
 										}
+									} finally {
+										meta.resolve(nodeState.output)
 									}
 
 									// Create new output first; delete old output after dependents update.
