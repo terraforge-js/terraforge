@@ -91,12 +91,12 @@ const fn = new aws.lambda.Function(stack, 'function', {
 
 new aws.lambda.EventSourceMapping(stack, 'event-source-mapping', {
 	functionName: fn.functionName,
-	maximumBatchingWindowInSeconds: 20,
+	maximumBatchingWindowInSeconds: Math.floor(Math.random() * 10 + 5),
 	eventSourceArn: table.streamArn,
 	startingPosition: 'LATEST',
 	batchSize: 10,
 })
 
-await workspace.deploy(app)
+await workspace.delete(app)
 
 console.log('DONE!')

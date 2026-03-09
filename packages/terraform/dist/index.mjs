@@ -1966,6 +1966,23 @@ const formatAttributePath = (state) => {
 		});
 	});
 };
+const getNestedValue = (obj, path) => {
+	let current = obj;
+	for (const key of path) {
+		if (current === null || current === void 0) return current;
+		if (Array.isArray(current)) current = current[key];
+		else if (typeof current === "object") current = current[key];
+		else return;
+	}
+	return current;
+};
+const filterRequiresReplace = (paths, priorState, proposedState) => {
+	return paths.filter((path) => {
+		const priorValue = getNestedValue(priorState, path);
+		const proposedValue = getNestedValue(proposedState, path);
+		return JSON.stringify(priorValue) !== JSON.stringify(proposedValue);
+	});
+};
 var IncorrectType = class extends TypeError {
 	constructor(type, path) {
 		super(`${path.join(".")} should be a ${type}`);
@@ -2018,7 +2035,7 @@ const formatInputState = (schema, state, includeSchemaFields = true, path = []) 
 	throw new Error(`Unknown schema type: ${schema.type}`);
 };
 const formatOutputState = (schema, state, path = []) => {
-	if (state === null) return;
+	if (state === null) return null;
 	if (schema.type === "array") {
 		if (Array.isArray(state)) return state.map((item, i) => formatOutputState(schema.item, item, [...path, i]));
 		throw new IncorrectType(schema.type, path);
@@ -2050,7 +2067,7 @@ const formatOutputState = (schema, state, path = []) => {
 				object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
 			}
 			return object;
-		} else return;
+		} else return null;
 		throw new IncorrectType(schema.type, path);
 	}
 	return state;
@@ -2116,7 +2133,7 @@ const createPlugin5 = async ({ server, client }) => {
 			});
 			const plannedState = decodeDynamicValue(plan.plannedState);
 			return {
-				requiresReplace: formatAttributePath(plan.requiresReplace),
+				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
 				plannedState
 			};
 		},
@@ -2198,7 +2215,7 @@ const createPlugin6 = async ({ server, client }) => {
 			});
 			const plannedState = decodeDynamicValue(plan.plannedState);
 			return {
-				requiresReplace: formatAttributePath(plan.requiresReplace),
+				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
 				plannedState
 			};
 		},

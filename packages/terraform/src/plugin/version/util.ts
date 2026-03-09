@@ -79,6 +79,33 @@ export const formatAttributePath = (state?: AttributePath[]): Array<number | str
 	})
 }
 
+const getNestedValue = (obj: Record<string, unknown>, path: Array<string | number>): unknown => {
+	let current: unknown = obj
+	for (const key of path) {
+		if (current === null || current === undefined) return current
+		if (Array.isArray(current)) {
+			current = current[key as number]
+		} else if (typeof current === 'object') {
+			current = (current as Record<string, unknown>)[key as string]
+		} else {
+			return undefined
+		}
+	}
+	return current
+}
+
+export const filterRequiresReplace = (
+	paths: Array<Array<string | number>>,
+	priorState: Record<string, unknown>,
+	proposedState: Record<string, unknown>
+): Array<Array<string | number>> => {
+	return paths.filter(path => {
+		const priorValue = getNestedValue(priorState, path)
+		const proposedValue = getNestedValue(proposedState, path)
+		return JSON.stringify(priorValue) !== JSON.stringify(proposedValue)
+	})
+}
+
 class IncorrectType extends TypeError {
 	constructor(type: string, path: Array<string | number>) {
 		super(`${path.join('.')} should be a ${type}`)
@@ -209,7 +236,7 @@ export const formatInputState = (
 
 export const formatOutputState = (schema: Property, state: unknown, path: Array<string | number> = []): any => {
 	if (state === null) {
-		return undefined
+		return null
 	}
 
 	if (schema.type === 'array') {
@@ -261,7 +288,7 @@ export const formatOutputState = (schema: Property, state: unknown, path: Array<
 
 				return object
 			} else {
-				return undefined
+				return null
 			}
 		}
 

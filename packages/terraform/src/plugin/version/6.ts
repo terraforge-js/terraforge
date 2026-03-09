@@ -5,6 +5,7 @@ import type { Plugin } from './type.ts'
 import {
 	decodeDynamicValue,
 	encodeDynamicValue,
+	filterRequiresReplace,
 	formatAttributePath,
 	formatInputState,
 	formatOutputState,
@@ -90,7 +91,11 @@ export const createPlugin6 = async ({
 			})
 
 			const plannedState = decodeDynamicValue(plan.plannedState)
-			const requiresReplace = formatAttributePath(plan.requiresReplace)
+			const requiresReplace = filterRequiresReplace(
+				formatAttributePath(plan.requiresReplace),
+				preparedPriorState as Record<string, unknown>,
+				preparedProposedState as Record<string, unknown>
+			)
 
 			return {
 				requiresReplace,
