@@ -3,5 +3,5 @@ import { createTerraformProxy } from '@terraforge/terraform'
 
 export const aws = createTerraformProxy({
 	namespace: 'aws',
-	provider: { org: 'hashicorp', type: 'aws', version: '6.28.0' },
+	provider: { org: 'hashicorp', type: 'aws', version: '6.35.1' },
 })

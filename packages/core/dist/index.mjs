@@ -984,25 +984,31 @@ const deployApp = async (app, opt) => {
 							let newResourceState;
 							const ignoreReplace = forcedUpdateDependents.has(meta$1.urn);
 							if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
-								for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
-									if (!isResource(dependentNode)) continue;
-									const dependentMeta = getMeta(dependentNode);
-									if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
-									const dependentStackState = stackStates.get(dependentMeta.stack.urn);
-									const dependentState = dependentStackState?.nodes[dependentUrn];
-									if (!dependentStackState || !dependentState) continue;
-									const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
-									if (dependencyPaths.length === 0) continue;
-									const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
-									if (dependentProvider.planResourceChange) {
-										if ((await dependentProvider.planResourceChange({
-											type: dependentMeta.type,
-											priorState: dependentState.output,
-											proposedState: input
-										})).requiresReplacement) {
-											if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+								meta$1.resolve(input);
+								try {
+									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+										if (!isResource(dependentNode)) continue;
+										const dependentMeta = getMeta(dependentNode);
+										if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
+										const dependentStackState = stackStates.get(dependentMeta.stack.urn);
+										const dependentState = dependentStackState?.nodes[dependentUrn];
+										if (!dependentStackState || !dependentState) continue;
+										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
+										if (dependencyPaths.length === 0) continue;
+										const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
+										if (dependentProvider.planResourceChange) {
+											const dependentProposedInput = await resolveInputs(dependentMeta.input);
+											if ((await dependentProvider.planResourceChange({
+												type: dependentMeta.type,
+												priorState: dependentState.output,
+												proposedState: dependentProposedInput
+											})).requiresReplacement) {
+												if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+											}
 										}
 									}
+								} finally {
+									meta$1.resolve(nodeState.output);
 								}
 								const priorState = { ...nodeState };
 								newResourceState = await createResource(node, appState.idempotentToken, input, opt);

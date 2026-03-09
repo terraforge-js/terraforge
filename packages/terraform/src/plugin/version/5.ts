@@ -78,13 +78,17 @@ export const createPlugin5 = async ({
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
-			const preparedProposedState = formatInputState(schema, proposedState)
+			const preparedProposedState = formatInputState(schema, {
+				...priorState,
+				...proposedState,
+			})
+			const configState = formatInputState(schema, proposedState)
 
 			const plan = await client.call('PlanResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(preparedProposedState),
+				config: encodeDynamicValue(configState),
 			})
 
 			const plannedState = decodeDynamicValue(plan.plannedState)
@@ -102,13 +106,17 @@ export const createPlugin5 = async ({
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
-			const preparedProposedState = formatInputState(schema, proposedState)
+			const preparedProposedState = formatInputState(schema, {
+				...priorState,
+				...proposedState,
+			})
+			const configState = formatInputState(schema, proposedState)
 
 			const apply = await client.call('ApplyResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				plannedState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(preparedProposedState),
+				config: encodeDynamicValue(configState),
 			})
 
 			return formatOutputState(schema, decodeDynamicValue(apply.newState))

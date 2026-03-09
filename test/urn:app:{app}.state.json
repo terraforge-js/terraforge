@@ -1,0 +1,232 @@
+{
+  "name": "app",
+  "stacks": {
+    "urn:app:{app}:stack:{stack}": {
+      "name": "stack",
+      "nodes": {
+        "urn:app:{app}:stack:{stack}:resource:aws_dynamodb_table:{table}": {
+          "tag": "resource",
+          "version": 0,
+          "type": "aws_dynamodb_table",
+          "provider": "terraform:aws:default",
+          "input": {
+            "name": "my-table",
+            "billingMode": "PAY_PER_REQUEST",
+            "hashKey": "pk",
+            "rangeKey": "sk",
+            "attribute": [
+              {
+                "name": "pk",
+                "type": "S"
+              },
+              {
+                "name": "sk",
+                "type": "S"
+              }
+            ],
+            "streamEnabled": true,
+            "streamViewType": "NEW_AND_OLD_IMAGES"
+          },
+          "output": {
+            "arn": "arn:aws:dynamodb:us-east-1:468004125411:table/my-table",
+            "billingMode": "PAY_PER_REQUEST",
+            "deletionProtectionEnabled": false,
+            "hashKey": "pk",
+            "id": "my-table",
+            "name": "my-table",
+            "rangeKey": "sk",
+            "readCapacity": 0,
+            "streamArn": "arn:aws:dynamodb:us-east-1:468004125411:table/my-table/stream/2026-03-09T17:56:55.087",
+            "streamEnabled": true,
+            "streamLabel": "2026-03-09T17:56:55.087",
+            "streamViewType": "NEW_AND_OLD_IMAGES",
+            "tableClass": "STANDARD",
+            "writeCapacity": 0,
+            "attribute": [
+              {
+                "name": "pk",
+                "type": "S"
+              },
+              {
+                "name": "sk",
+                "type": "S"
+              }
+            ],
+            "pointInTimeRecovery": {
+              "enabled": false,
+              "recoveryPeriodInDays": 0
+            },
+            "ttl": {
+              "attributeName": "",
+              "enabled": false
+            }
+          },
+          "dependencies": [],
+          "lifecycle": {}
+        },
+        "urn:app:{app}:stack:{stack}:resource:aws_iam_role:{lambda-role}": {
+          "tag": "resource",
+          "version": 0,
+          "type": "aws_iam_role",
+          "provider": "terraform:aws:default",
+          "input": {
+            "name": "my-lambda-role",
+            "assumeRolePolicy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+            "managedPolicyArns": [
+              "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            ]
+          },
+          "output": {
+            "arn": "arn:aws:iam::468004125411:role/my-lambda-role",
+            "assumeRolePolicy": "{\"Statement\":[{\"Action\":\"sts:AssumeRole\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"}}],\"Version\":\"2012-10-17\"}",
+            "createDate": "2026-03-09T18:07:49Z",
+            "description": "",
+            "forceDetachPolicies": false,
+            "id": "my-lambda-role",
+            "managedPolicyArns": [
+              "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+            ],
+            "maxSessionDuration": 3600,
+            "name": "my-lambda-role",
+            "namePrefix": "",
+            "path": "/",
+            "permissionsBoundary": "",
+            "uniqueId": "AROAWZ5ZYHLRSNGV22OKX"
+          },
+          "dependencies": [],
+          "lifecycle": {}
+        },
+        "urn:app:{app}:stack:{stack}:resource:aws_iam_role_policy:{lambda-dynamo-policy}": {
+          "tag": "resource",
+          "version": 0,
+          "type": "aws_iam_role_policy",
+          "provider": "terraform:aws:default",
+          "input": {
+            "name": "dynamodb-stream-access",
+            "role": "my-lambda-role",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:GetRecords\",\"dynamodb:GetShardIterator\",\"dynamodb:DescribeStream\",\"dynamodb:ListStreams\"],\"Resource\":\"*\"}]}"
+          },
+          "output": {
+            "id": "my-lambda-role:dynamodb-stream-access",
+            "name": "dynamodb-stream-access",
+            "namePrefix": "",
+            "policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"dynamodb:GetRecords\",\"dynamodb:GetShardIterator\",\"dynamodb:DescribeStream\",\"dynamodb:ListStreams\"],\"Effect\":\"Allow\",\"Resource\":\"*\"}]}",
+            "role": "my-lambda-role"
+          },
+          "dependencies": [
+            "urn:app:{app}:stack:{stack}:resource:aws_iam_role:{lambda-role}"
+          ],
+          "lifecycle": {}
+        },
+        "urn:app:{app}:stack:{stack}:resource:aws_lambda_function:{function}": {
+          "tag": "resource",
+          "version": 0,
+          "type": "aws_lambda_function",
+          "provider": "terraform:aws:default",
+          "input": {
+            "functionName": "test-1",
+            "role": "arn:aws:iam::468004125411:role/my-lambda-role",
+            "runtime": "nodejs24.x",
+            "handler": "index.default",
+            "filename": "/Users/ivandasilveira/Sites/@terraforge/test/lambda.zip"
+          },
+          "output": {
+            "architectures": [
+              "x86_64"
+            ],
+            "arn": "arn:aws:lambda:us-east-1:468004125411:function:test-1",
+            "codeSha256": "cKtvDDS2QSvTbU+Tuse5eJEz/frMb7cYD8XO29st8Po=",
+            "codeSigningConfigArn": "",
+            "description": "",
+            "filename": "/Users/ivandasilveira/Sites/@terraforge/test/lambda.zip",
+            "functionName": "test-1",
+            "handler": "index.default",
+            "id": "test-1",
+            "imageUri": "",
+            "invokeArn": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:468004125411:function:test-1/invocations",
+            "kmsKeyArn": "",
+            "lastModified": "2026-03-09T18:10:08.877+0000",
+            "memorySize": 128,
+            "packageType": "Zip",
+            "publish": false,
+            "qualifiedArn": "arn:aws:lambda:us-east-1:468004125411:function:test-1:$LATEST",
+            "qualifiedInvokeArn": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:468004125411:function:test-1:$LATEST/invocations",
+            "reservedConcurrentExecutions": -1,
+            "responseStreamingInvokeArn": "arn:aws:apigateway:us-east-1:lambda:path/2021-11-15/functions/arn:aws:lambda:us-east-1:468004125411:function:test-1/response-streaming-invocations",
+            "role": "arn:aws:iam::468004125411:role/my-lambda-role",
+            "runtime": "nodejs24.x",
+            "signingJobArn": "",
+            "signingProfileVersionArn": "",
+            "skipDestroy": false,
+            "sourceCodeHash": "",
+            "sourceCodeSize": 484,
+            "sourceKmsKeyArn": "",
+            "timeout": 3,
+            "version": "$LATEST",
+            "ephemeralStorage": {
+              "size": 512
+            },
+            "loggingConfig": {
+              "applicationLogLevel": "",
+              "logFormat": "Text",
+              "logGroup": "/aws/lambda/test-1",
+              "systemLogLevel": ""
+            },
+            "tracingConfig": {
+              "mode": "PassThrough"
+            }
+          },
+          "dependencies": [
+            "urn:app:{app}:stack:{stack}:resource:aws_iam_role:{lambda-role}"
+          ],
+          "lifecycle": {}
+        },
+        "urn:app:{app}:stack:{stack}:resource:aws_lambda_event_source_mapping:{event-source-mapping}": {
+          "tag": "resource",
+          "version": 0,
+          "type": "aws_lambda_event_source_mapping",
+          "provider": "terraform:aws:default",
+          "input": {
+            "functionName": "test-1",
+            "maximumBatchingWindowInSeconds": 10,
+            "eventSourceArn": "arn:aws:dynamodb:us-east-1:468004125411:table/my-table/stream/2026-03-09T17:56:55.087",
+            "startingPosition": "LATEST",
+            "batchSize": 10
+          },
+          "output": {
+            "arn": "arn:aws:lambda:us-east-1:468004125411:event-source-mapping:5010fc2e-f92a-4a99-a7f1-22e77aea4c1d",
+            "batchSize": 10,
+            "bisectBatchOnFunctionError": false,
+            "enabled": true,
+            "eventSourceArn": "arn:aws:dynamodb:us-east-1:468004125411:table/my-table/stream/2026-03-09T17:56:55.087",
+            "functionArn": "arn:aws:lambda:us-east-1:468004125411:function:test-1",
+            "functionName": "arn:aws:lambda:us-east-1:468004125411:function:test-1",
+            "id": "5010fc2e-f92a-4a99-a7f1-22e77aea4c1d",
+            "kmsKeyArn": "",
+            "lastModified": "2026-03-09T18:10:00Z",
+            "lastProcessingResult": "No records processed",
+            "maximumBatchingWindowInSeconds": 10,
+            "maximumRecordAgeInSeconds": -1,
+            "maximumRetryAttempts": -1,
+            "parallelizationFactor": 1,
+            "startingPosition": "LATEST",
+            "startingPositionTimestamp": "",
+            "state": "Enabled",
+            "stateTransitionReason": "User action",
+            "tumblingWindowInSeconds": 0,
+            "uuid": "5010fc2e-f92a-4a99-a7f1-22e77aea4c1d",
+            "destinationConfig": {
+              "onFailure": {}
+            }
+          },
+          "dependencies": [
+            "urn:app:{app}:stack:{stack}:resource:aws_lambda_function:{function}",
+            "urn:app:{app}:stack:{stack}:resource:aws_dynamodb_table:{table}"
+          ],
+          "lifecycle": {}
+        }
+      }
+    }
+  },
+  "version": 2
+}

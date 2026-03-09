@@ -9,88 +9,94 @@ import {
 	Stack,
 	WorkSpace,
 } from '@terraforge/core'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 
 const dir = './test'
-const activityLog = new FileActivityLogBackend({ dir, user: 'unknown' })
+// const activityLog = new FileActivityLogBackend({ dir, user: 'unknown' })
 
 const workspace = new WorkSpace({
 	backend: {
-		activityLog,
+		// activityLog,
 		state: new FileStateBackend({ dir }),
 		lock: new FileLockBackend({ dir }),
 	},
 	providers: [
 		aws({
 			region: 'us-east-1',
-			profile: 'default',
+			profile: 'jacksclub',
 			// accessKey: ''
 		}),
 	],
 })
 
 const app = new App('app')
-// const stack = new Stack(app, 'stack')
-// const group = new Group(stack, 'stack', 'lol')
+const stack = new Stack(app, 'stack')
 
-// const bucket = new aws.s3.Bucket(
-// 	group,
-// 	'bucket',
-// 	{
-// 		bucket: 'name-1',
-// 	},
-// 	{
-// 		replaceOnChanges: ['bucket'],
-// 		createBeforeReplace: true,
-// 	}
-// )
+const table = new aws.dynamodb.Table(stack, 'table', {
+	name: 'my-table',
+	billingMode: 'PAY_PER_REQUEST',
+	hashKey: 'pk',
+	rangeKey: 'sk',
+	attribute: [
+		{ name: 'pk', type: 'S' },
+		{ name: 'sk', type: 'S' },
+	],
+	streamEnabled: true,
+	streamViewType: 'NEW_AND_OLD_IMAGES',
+})
 
-// const item = new aws.s3.BucketObject(group, 'object', {
-// 	bucket: bucket.bucket,
-// 	key: 'item',
-// })
+const role = new aws.iam.Role(stack, 'lambda-role', {
+	name: 'my-lambda-role',
+	assumeRolePolicy: JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [
+			{
+				Effect: 'Allow',
+				Principal: { Service: 'lambda.amazonaws.com' },
+				Action: 'sts:AssumeRole',
+			},
+		],
+	}),
+	managedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
+})
+
+new aws.iam.RolePolicy(stack, 'lambda-dynamo-policy', {
+	name: 'dynamodb-stream-access',
+	role: role.name,
+	policy: JSON.stringify({
+		Version: '2012-10-17',
+		Statement: [
+			{
+				Effect: 'Allow',
+				Action: [
+					'dynamodb:GetRecords',
+					'dynamodb:GetShardIterator',
+					'dynamodb:DescribeStream',
+					'dynamodb:ListStreams',
+				],
+				Resource: '*',
+			},
+		],
+	}),
+})
+
+const fn = new aws.lambda.Function(stack, 'function', {
+	functionName: 'test-1',
+	role: role.arn,
+	runtime: 'nodejs24.x',
+	handler: 'index.default',
+	filename: join(__dirname, '/lambda.zip'),
+})
+
+new aws.lambda.EventSourceMapping(stack, 'event-source-mapping', {
+	functionName: fn.functionName,
+	maximumBatchingWindowInSeconds: 20,
+	eventSourceArn: table.streamArn,
+	startingPosition: 'LATEST',
+	batchSize: 10,
+})
 
 await workspace.deploy(app)
 
-console.log('Logs:', await activityLog.tail(app.urn))
-
-// await provider.createResource({
-// 	'type': 'aws_s3_bucket',
-// 	'state': {}
-// })
-
-// const vpc = new aws.Vpc(group, 'vpc', {})
-// const bucket1 = new aws.s3.Bucket(group, 'bucket-1', { bucket: 'my-special-name-123' })
-// const bucket2 = aws.s3.getBucket(group, 'bucket-2', { bucket: 'my-special-name-123' })
-// const param = aws.ssm.getParameter(
-// 	stack,
-// 	'param',
-// 	{ name: 'my-param-name' },
-// 	{
-// 		dependsOn: [vpc, bucket1, bucket2],
-// 	}
-// )
-
-// bucket1.urn
-// vpc.urn
-// param.urn
-
-// param.withDecryption.pipe(value => {
-// 	console.log('Parameter value:', value)
-// })
-
-// param.id.pipe(id => {
-// 	console.log('Parameter ID:', id)
-// })
-
-// class MyClass {
-// 	readonly id = '1'
-// 	// declare [key: string]: unknown
-// }
-
-// function test(params: Record<string, any>) {
-// 	console.log('Test function called')
-// }
-
-// test(new MyClass())
-
-// // const lol = new Resource()
+console.log('DONE!')
