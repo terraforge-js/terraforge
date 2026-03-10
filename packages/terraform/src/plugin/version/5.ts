@@ -75,24 +75,23 @@ export const createPlugin5 = async ({
 		async planResourceChange(
 			type: string,
 			priorState: Record<string, unknown> | null,
-			proposedState: Record<string, unknown> | null
+			proposedState: Record<string, unknown> | null,
+			configState: Record<string, unknown> | null
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
-			const preparedProposedState = formatInputState(schema, {
-				...priorState,
-				...proposedState,
-			})
-			const configState = formatInputState(schema, proposedState)
+			const preparedProposedState = formatInputState(schema, proposedState)
+			const preparedConfigState = formatInputState(schema, configState)
 
 			const plan = await client.call('PlanResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(configState),
+				config: encodeDynamicValue(preparedConfigState),
 			})
 
-			const plannedState = decodeDynamicValue(plan.plannedState)
+			const rawPlannedState = decodeDynamicValue(plan.plannedState)
+			const plannedState = formatOutputState(schema, rawPlannedState)
 			const requiresReplace = filterRequiresReplace(
 				formatAttributePath(plan.requiresReplace),
 				preparedPriorState as Record<string, unknown>,
@@ -107,21 +106,19 @@ export const createPlugin5 = async ({
 		async applyResourceChange(
 			type: string,
 			priorState: Record<string, unknown> | null,
-			proposedState: Record<string, unknown> | null
+			plannedState: Record<string, unknown> | null,
+			configState: Record<string, unknown> | null
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
-			const preparedProposedState = formatInputState(schema, {
-				...priorState,
-				...proposedState,
-			})
-			const configState = formatInputState(schema, proposedState)
+			const preparedPlannedState = formatInputState(schema, plannedState)
+			const preparedConfigState = formatInputState(schema, configState)
 
 			const apply = await client.call('ApplyResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
-				plannedState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(configState),
+				plannedState: encodeDynamicValue(preparedPlannedState),
+				config: encodeDynamicValue(preparedConfigState),
 			})
 
 			return formatOutputState(schema, decodeDynamicValue(apply.newState))

@@ -235,7 +235,7 @@ export const formatInputState = (
 }
 
 export const formatOutputState = (schema: Property, state: unknown, path: Array<string | number> = []): any => {
-	if (state === null) {
+	if (state === null || state === undefined) {
 		return null
 	}
 

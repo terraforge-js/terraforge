@@ -36,11 +36,11 @@ type Plugin = Readonly<{
   readResource: (type: string, state: State$1) => Promise<State$1>;
   readDataSource: (type: string, state: State$1) => Promise<State$1>;
   validateResource: (type: string, state: State$1) => Promise<void>;
-  planResourceChange: (type: string, priorState: State$1 | null, proposedNewState: State$1 | null) => Promise<{
+  planResourceChange: (type: string, priorState: State$1 | null, proposedNewState: State$1 | null, configState: State$1 | null) => Promise<{
     requiresReplace: Array<string | number>[];
     plannedState: State$1;
   }>;
-  applyResourceChange: (type: string, priorState: State$1 | null, proposedNewState: State$1 | null) => Promise<State$1>;
+  applyResourceChange: (type: string, priorState: State$1 | null, plannedState: State$1 | null, configState: State$1 | null) => Promise<State$1>;
 }>;
 //#endregion
 //#region ../core/src/future.d.ts

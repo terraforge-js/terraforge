@@ -47,7 +47,7 @@ const table = new aws.dynamodb.Table(stack, 'table', {
 })
 
 const role = new aws.iam.Role(stack, 'lambda-role', {
-	name: 'my-lambda-role',
+	name: 'my-lambda-role-2',
 	assumeRolePolicy: JSON.stringify({
 		Version: '2012-10-17',
 		Statement: [
@@ -97,6 +97,6 @@ new aws.lambda.EventSourceMapping(stack, 'event-source-mapping', {
 	batchSize: 10,
 })
 
-await workspace.delete(app)
+await workspace.deploy(app)
 
 console.log('DONE!')

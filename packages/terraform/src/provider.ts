@@ -73,7 +73,7 @@ export class TerraformProvider implements Provider {
 
 	async createResource({ type, state }: CreateProps) {
 		const plugin = await this.configure()
-		const newState = await plugin.applyResourceChange(type, null, state)
+		const newState = await plugin.applyResourceChange(type, null, state, state)
 
 		return {
 			version: 0,
@@ -83,7 +83,13 @@ export class TerraformProvider implements Provider {
 
 	async updateResource({ type, priorState, proposedState }: UpdateProps) {
 		const plugin = await this.configure()
-		const { requiresReplace } = await plugin.planResourceChange(type, priorState, proposedState)
+		const mergedState = { ...priorState, ...proposedState }
+		const { requiresReplace, plannedState } = await plugin.planResourceChange(
+			type,
+			priorState,
+			mergedState,
+			proposedState
+		)
 
 		if (requiresReplace.length > 0) {
 			const formattedAttrs = requiresReplace.map(p => p.join('.')).join('", "')
@@ -93,7 +99,7 @@ export class TerraformProvider implements Provider {
 			)
 		}
 
-		const newState = await plugin.applyResourceChange(type, priorState, proposedState)
+		const newState = await plugin.applyResourceChange(type, priorState, plannedState, proposedState)
 
 		return {
 			version: 0,
@@ -104,7 +110,7 @@ export class TerraformProvider implements Provider {
 	async deleteResource({ type, state }: DeleteProps) {
 		const plugin = await this.configure()
 		try {
-			await plugin.applyResourceChange(type, state, null)
+			await plugin.applyResourceChange(type, state, null, null)
 		} catch (error) {
 			// -------------------------------------------------------
 			// Sadly terraform doesn't have a normalized error for
@@ -126,7 +132,8 @@ export class TerraformProvider implements Provider {
 
 	async planResourceChange({ type, priorState, proposedState }: PlanProps) {
 		const plugin = await this.configure()
-		const result = await plugin.planResourceChange(type, priorState, proposedState)
+		const mergedState = { ...priorState, ...proposedState }
+		const result = await plugin.planResourceChange(type, priorState, mergedState, proposedState)
 
 		return {
 			version: 0,

@@ -16,10 +16,16 @@ export type Plugin = Readonly<{
 	planResourceChange: (
 		type: string,
 		priorState: State | null,
-		proposedNewState: State | null
+		proposedNewState: State | null,
+		configState: State | null
 	) => Promise<{
 		requiresReplace: Array<string | number>[]
 		plannedState: State
 	}>
-	applyResourceChange: (type: string, priorState: State | null, proposedNewState: State | null) => Promise<State>
+	applyResourceChange: (
+		type: string,
+		priorState: State | null,
+		plannedState: State | null,
+		configState: State | null
+	) => Promise<State>
 }>
