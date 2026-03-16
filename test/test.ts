@@ -46,57 +46,57 @@ const table = new aws.dynamodb.Table(stack, 'table', {
 	streamViewType: 'NEW_AND_OLD_IMAGES',
 })
 
-const role = new aws.iam.Role(stack, 'lambda-role', {
-	name: 'my-lambda-role-2',
-	assumeRolePolicy: JSON.stringify({
-		Version: '2012-10-17',
-		Statement: [
-			{
-				Effect: 'Allow',
-				Principal: { Service: 'lambda.amazonaws.com' },
-				Action: 'sts:AssumeRole',
-			},
-		],
-	}),
-	managedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
-})
+// const role = new aws.iam.Role(stack, 'lambda-role', {
+// 	name: 'my-lambda-role-2',
+// 	assumeRolePolicy: JSON.stringify({
+// 		Version: '2012-10-17',
+// 		Statement: [
+// 			{
+// 				Effect: 'Allow',
+// 				Principal: { Service: 'lambda.amazonaws.com' },
+// 				Action: 'sts:AssumeRole',
+// 			},
+// 		],
+// 	}),
+// 	managedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'],
+// })
 
-new aws.iam.RolePolicy(stack, 'lambda-dynamo-policy', {
-	name: 'dynamodb-stream-access',
-	role: role.name,
-	policy: JSON.stringify({
-		Version: '2012-10-17',
-		Statement: [
-			{
-				Effect: 'Allow',
-				Action: [
-					'dynamodb:GetRecords',
-					'dynamodb:GetShardIterator',
-					'dynamodb:DescribeStream',
-					'dynamodb:ListStreams',
-				],
-				Resource: '*',
-			},
-		],
-	}),
-})
+// new aws.iam.RolePolicy(stack, 'lambda-dynamo-policy', {
+// 	name: 'dynamodb-stream-access',
+// 	role: role.name,
+// 	policy: JSON.stringify({
+// 		Version: '2012-10-17',
+// 		Statement: [
+// 			{
+// 				Effect: 'Allow',
+// 				Action: [
+// 					'dynamodb:GetRecords',
+// 					'dynamodb:GetShardIterator',
+// 					'dynamodb:DescribeStream',
+// 					'dynamodb:ListStreams',
+// 				],
+// 				Resource: '*',
+// 			},
+// 		],
+// 	}),
+// })
 
-const fn = new aws.lambda.Function(stack, 'function', {
-	functionName: 'test-1',
-	role: role.arn,
-	runtime: 'nodejs24.x',
-	handler: 'index.default',
-	filename: join(__dirname, '/lambda.zip'),
-})
+// const fn = new aws.lambda.Function(stack, 'function', {
+// 	functionName: 'test-1',
+// 	role: role.arn,
+// 	runtime: 'nodejs24.x',
+// 	handler: 'index.default',
+// 	filename: join(__dirname, '/lambda.zip'),
+// })
 
-new aws.lambda.EventSourceMapping(stack, 'event-source-mapping', {
-	functionName: fn.functionName,
-	maximumBatchingWindowInSeconds: Math.floor(Math.random() * 10 + 5),
-	eventSourceArn: table.streamArn,
-	startingPosition: 'LATEST',
-	batchSize: 10,
-})
+// new aws.lambda.EventSourceMapping(stack, 'event-source-mapping', {
+// 	functionName: fn.functionName,
+// 	maximumBatchingWindowInSeconds: Math.floor(Math.random() * 10 + 5),
+// 	eventSourceArn: table.streamArn,
+// 	startingPosition: 'LATEST',
+// 	batchSize: 10,
+// })
 
-await workspace.deploy(app)
+await workspace.delete(app, { filters: ['stack'] })
 
 console.log('DONE!')

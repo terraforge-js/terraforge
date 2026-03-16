@@ -351,7 +351,10 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 												continue
 											}
 
-											const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
+											const dependentProvider = findProvider(
+												opt.providers,
+												dependentMeta.provider
+											)
 											if (dependentProvider.planResourceChange) {
 												const dependentProposedInput = await resolveInputs(dependentMeta.input)
 
