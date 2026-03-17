@@ -355,7 +355,14 @@ declare class WorkSpace {
   /**
    * Refresh the state of the resources & data-sources inside your app.
    */
-  refresh(app: App): Promise<void>;
+  refresh(app: App, options?: ProcedureOptions): Promise<{
+    operations: {
+      urn: URN;
+      operation: "delete" | "update";
+      commit(): void;
+    }[];
+    commit: () => Promise<void>;
+  } | undefined>;
   /**
    * Get the status of all resources in the app by comparing current config with state file.
    */

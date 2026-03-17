@@ -5,6 +5,7 @@ import { StateBackend } from '../backend/state.ts'
 // import { findInputDeps } from '../input.ts'
 import { ActivityLogBackend } from '../backend/activity-log.ts'
 import { Provider } from '../provider.ts'
+import { onExit } from './exit.ts'
 import { Hooks } from './hooks.ts'
 import { lockApp } from './lock.ts'
 import { deleteApp } from './procedure/delete-app.ts'
@@ -68,14 +69,52 @@ export class WorkSpace {
 	/**
 	 * Refresh the state of the resources & data-sources inside your app.
 	 */
-	refresh(app: App) {
-		return lockApp(this.props.backend.lock, app, async () => {
-			try {
-				await refresh(app, this.props)
-			} finally {
-				await this.destroyProviders()
-			}
+	async refresh(app: App, options: ProcedureOptions = {}) {
+		let releaseLock
+		try {
+			releaseLock = await this.props.backend.lock.lock(app.urn)
+		} catch (error) {
+			throw new Error(`Already in progress: ${app.urn}`)
+		}
+
+		// --------------------------------------------------
+		// Release the lock if we get a TERM signal from
+		// the user
+
+		const releaseExit = onExit(async () => {
+			await this.destroyProviders()
+			await releaseLock()
 		})
+
+		// --------------------------------------------------
+
+		try {
+			const result = await refresh(app, { ...this.props, ...options })
+
+			if (!result) {
+				await this.destroyProviders()
+				await releaseLock()
+				releaseExit()
+
+				return
+			}
+
+			return {
+				operations: result.operations,
+				commit: async () => {
+					await result.commit()
+					await this.destroyProviders()
+					await releaseLock()
+					releaseExit()
+				},
+			}
+		} catch (error) {
+			await this.destroyProviders()
+			await releaseLock()
+			releaseExit()
+
+			throw error
+		}
 	}
 
 	/**

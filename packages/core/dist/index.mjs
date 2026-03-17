@@ -1114,34 +1114,53 @@ const hydrate = async (app, opt) => {
 const refresh = async (app, opt) => {
 	const appState = await opt.backend.state.get(app.urn);
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10);
-	if (appState) {
-		await Promise.all(Object.values(appState.stacks).map((stackState) => {
-			return Promise.all(Object.values(stackState.nodes).map((nodeState) => {
+	let filteredStacks = Object.values(appState?.stacks ?? {});
+	if (opt.filters && opt.filters.length > 0) filteredStacks = Object.entries(appState?.stacks ?? {}).filter(([stackName]) => {
+		return opt.filters.includes(stackName);
+	}).map(([_, state]) => state);
+	if (appState && filteredStacks.length > 0) {
+		const filteredOperations = (await Promise.all(filteredStacks.map((stackState) => {
+			return Promise.all(Object.entries(stackState.nodes).map(([_urn, nodeState]) => {
+				const urn = _urn;
 				return queue(async () => {
 					const provider = findProvider(opt.providers, nodeState.provider);
-					if (nodeState.tag === "data") {
-						const result = await provider.getData?.({
-							type: nodeState.type,
-							state: nodeState.output
-						});
-						if (result && !compareState(result.state, nodeState.output)) {
-							nodeState.output = result.state;
-							nodeState.input = result.state;
+					let result;
+					if (nodeState.tag === "data") result = await provider.getData?.({
+						type: nodeState.type,
+						state: nodeState.output
+					});
+					else result = await provider.getResource({
+						type: nodeState.type,
+						state: nodeState.output
+					});
+					console.log(urn);
+					console.log(nodeState.output);
+					console.log(result?.state);
+					if (!result) return {
+						urn,
+						operation: "delete",
+						commit() {
+							delete stackState.nodes[urn];
 						}
-					} else if (nodeState.tag === "resource") {
-						const result = await provider.getResource({
-							type: nodeState.type,
-							state: nodeState.output
-						});
-						if (result && !compareState(result.state, nodeState.output)) {
-							nodeState.output = result.state;
+					};
+					else if (!compareState(result.state, nodeState.output)) return {
+						urn,
+						operation: "update",
+						commit() {
 							nodeState.input = result.state;
+							nodeState.output = result.state;
 						}
-					}
+					};
 				});
 			}));
-		}));
-		await opt.backend.state.update(app.urn, appState);
+		}))).flat().filter((op) => !!op);
+		if (filteredOperations.length === 0) return;
+		return {
+			operations: filteredOperations,
+			async commit() {
+				await opt.backend.state.update(app.urn, appState);
+			}
+		};
 	}
 };
 
@@ -1296,14 +1315,43 @@ var WorkSpace = class {
 	/**
 	* Refresh the state of the resources & data-sources inside your app.
 	*/
-	refresh(app) {
-		return lockApp(this.props.backend.lock, app, async () => {
-			try {
-				await refresh(app, this.props);
-			} finally {
-				await this.destroyProviders();
-			}
+	async refresh(app, options = {}) {
+		let releaseLock;
+		try {
+			releaseLock = await this.props.backend.lock.lock(app.urn);
+		} catch (error) {
+			throw new Error(`Already in progress: ${app.urn}`);
+		}
+		const releaseExit = onExit(async () => {
+			await this.destroyProviders();
+			await releaseLock();
 		});
+		try {
+			const result = await refresh(app, {
+				...this.props,
+				...options
+			});
+			if (!result) {
+				await this.destroyProviders();
+				await releaseLock();
+				releaseExit();
+				return;
+			}
+			return {
+				operations: result.operations,
+				commit: async () => {
+					await result.commit();
+					await this.destroyProviders();
+					await releaseLock();
+					releaseExit();
+				}
+			};
+		} catch (error) {
+			await this.destroyProviders();
+			await releaseLock();
+			releaseExit();
+			throw error;
+		}
 	}
 	/**
 	* Get the status of all resources in the app by comparing current config with state file.
