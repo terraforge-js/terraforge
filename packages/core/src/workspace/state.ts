@@ -26,6 +26,7 @@ export type NodeState = {
 	provider: string
 	input: State
 	output: State
+	drifted?: boolean
 	dependencies: URN[]
 	lifecycle?: {
 		retainOnDelete?: boolean

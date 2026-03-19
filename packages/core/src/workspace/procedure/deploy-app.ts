@@ -150,9 +150,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 			return stack.urn === urn
 		})
 
-		const filtered = opt.filters ? opt.filters!.find(filter => filter === stackState.name) : true
-
-		if (!found && filtered) {
+		if (!found) {
 			for (const [urn, nodeState] of entries(stackState.nodes)) {
 				graph.add(urn, dependentsOn(allNodes, urn), async () => {
 					if (nodeState.tag === 'resource') {
@@ -249,13 +247,15 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 							const dataSourceState = await getDataSource(meta, input, opt)
 							nodeState = stackState.nodes[meta.urn] = {
 								...dataSourceState,
+								drifted: undefined,
 								...partialNewResourceState,
 							}
-						} else if (!compareState(nodeState.input, input)) {
+						} else if (!compareState(nodeState.input, input) || nodeState.drifted) {
 							// UPDATE
 							const dataSourceState = await getDataSource(meta, input, opt)
 							Object.assign(nodeState, {
 								...dataSourceState,
+								drifted: undefined,
 								...partialNewResourceState,
 							})
 						} else {
@@ -308,28 +308,112 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 									...partialNewResourceState,
 								}
 							}
-						} else if (
-							// --------------------------------------------------
-							// Check if any state has changed
-							!compareState(nodeState.input, input)
-						) {
-							let newResourceState
+						} else {
+							const inputChanged = !compareState(nodeState.input, input)
+							const hasDrift = !!nodeState.drifted
 
-							// Dependent updates may be forced to detach/reattach during replacements.
-							const ignoreReplace = forcedUpdateDependents.has(meta.urn)
+							if (!inputChanged && !hasDrift) {
+								Object.assign(nodeState, partialNewResourceState)
+							} else {
+								let newResourceState
 
-							if (
-								!ignoreReplace &&
-								requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])
-							) {
-								// --------------------------------------------------
-								// Replace resource (optionally create before delete).
+								// Dependent updates may be forced to detach/reattach during replacements.
+								const ignoreReplace = forcedUpdateDependents.has(meta.urn)
 
-								if (meta.config?.createBeforeReplace) {
-									// Validate dependents can handle the replacement before creating new resource.
-									meta.resolve(input)
+								if (
+									!ignoreReplace &&
+									requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])
+								) {
+									// --------------------------------------------------
+									// Replace resource (optionally create before delete).
 
-									try {
+									if (meta.config?.createBeforeReplace) {
+										// Validate dependents can handle the replacement before creating new resource.
+										meta.resolve(input)
+
+										try {
+											for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+												if (!isResource(dependentNode)) {
+													continue
+												}
+
+												const dependentMeta = getMeta(dependentNode)
+												if (!dependentMeta.dependencies.has(meta.urn)) {
+													continue
+												}
+
+												const dependentStackState = stackStates.get(dependentMeta.stack.urn)
+												const dependentState = dependentStackState?.nodes[dependentUrn]
+												if (!dependentStackState || !dependentState) {
+													continue
+												}
+
+												const dependencyPaths = findDependencyPaths(
+													dependentMeta.input,
+													meta.urn
+												)
+												if (dependencyPaths.length === 0) {
+													continue
+												}
+
+												const dependentProvider = findProvider(
+													opt.providers,
+													dependentMeta.provider
+												)
+												if (dependentProvider.planResourceChange) {
+													const dependentProposedInput = await resolveInputs(
+														dependentMeta.input
+													)
+
+													const dependentPlan = await dependentProvider.planResourceChange({
+														type: dependentMeta.type,
+														priorState: dependentState.output,
+														proposedState: dependentProposedInput,
+													})
+
+													if (dependentPlan.requiresReplacement) {
+														if (
+															!allowsDependentReplace(
+																dependentMeta.config?.replaceOnChanges,
+																dependencyPaths
+															)
+														) {
+															throw ResourceError.wrap(
+																dependentMeta.urn,
+																dependentMeta.type,
+																'update',
+																new Error(
+																	`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+																)
+															)
+														}
+													}
+												}
+											}
+										} finally {
+											meta.resolve(nodeState.output)
+										}
+
+										// Create new output first; delete old output after dependents update.
+										const priorState = { ...nodeState }
+										newResourceState = await createResource(
+											node,
+											appState.idempotentToken!,
+											input,
+											opt
+										)
+
+										// Resolve immediately so dependents can access the new output
+										if (newResourceState.output) {
+											meta.resolve(newResourceState.output)
+										}
+
+										if (!meta.config?.retainOnDelete) {
+											appState.pendingDeletes ??= {}
+											appState.pendingDeletes[meta.urn] = priorState
+										}
+									} else {
+										// Replace resource while safely detaching dependents first.
 										for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
 											if (!isResource(dependentNode)) {
 												continue
@@ -340,173 +424,122 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 												continue
 											}
 
+											if (plannedDependents.has(dependentUrn)) {
+												continue
+											}
+
 											const dependentStackState = stackStates.get(dependentMeta.stack.urn)
 											const dependentState = dependentStackState?.nodes[dependentUrn]
 											if (!dependentStackState || !dependentState) {
 												continue
 											}
 
+											// Only operate on inputs that actually reference this dependency.
 											const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
 											if (dependencyPaths.length === 0) {
 												continue
 											}
 
+											// Detach dependency references before deleting the old dependency.
+											const detachedInput = stripDependencyInputs(
+												dependentState.input,
+												dependentMeta.input,
+												meta.urn
+											)
+
+											if (compareState(dependentState.input, detachedInput)) {
+												continue
+											}
+
+											plannedDependents.add(dependentUrn)
+
+											let dependentRequiresReplacement = false
 											const dependentProvider = findProvider(
 												opt.providers,
 												dependentMeta.provider
 											)
 											if (dependentProvider.planResourceChange) {
-												const dependentProposedInput = await resolveInputs(dependentMeta.input)
-
-												const dependentPlan = await dependentProvider.planResourceChange({
-													type: dependentMeta.type,
-													priorState: dependentState.output,
-													proposedState: dependentProposedInput,
-												})
-
-												if (dependentPlan.requiresReplacement) {
-													if (
-														!allowsDependentReplace(
-															dependentMeta.config?.replaceOnChanges,
-															dependencyPaths
-														)
-													) {
-														throw ResourceError.wrap(
-															dependentMeta.urn,
-															dependentMeta.type,
-															'update',
-															new Error(
-																`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
-															)
-														)
-													}
+												try {
+													const dependentPlan = await dependentProvider.planResourceChange({
+														type: dependentMeta.type,
+														priorState: dependentState.output,
+														proposedState: detachedInput,
+													})
+													dependentRequiresReplacement = dependentPlan.requiresReplacement
+												} catch (error) {
+													throw ResourceError.wrap(
+														dependentMeta.urn,
+														dependentMeta.type,
+														'update',
+														error
+													)
 												}
 											}
+
+											if (dependentRequiresReplacement) {
+												// If a dependent can't be updated, it must be deleted/recreated.
+												if (
+													!allowsDependentReplace(
+														dependentMeta.config?.replaceOnChanges,
+														dependencyPaths
+													)
+												) {
+													throw ResourceError.wrap(
+														dependentMeta.urn,
+														dependentMeta.type,
+														'update',
+														new Error(
+															`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
+														)
+													)
+												}
+
+												await deleteResource(
+													appState.idempotentToken!,
+													dependentUrn,
+													dependentState,
+													opt
+												)
+												delete dependentStackState.nodes[dependentUrn]
+											} else {
+												// Update dependents to detach now and reattach later.
+												const updated = await updateResource(
+													dependentNode,
+													appState.idempotentToken!,
+													dependentState.input,
+													dependentState.output,
+													detachedInput,
+													opt
+												)
+
+												Object.assign(dependentState, {
+													input: detachedInput,
+													...updated,
+												})
+
+												forcedUpdateDependents.add(dependentUrn)
+											}
 										}
-									} finally {
-										meta.resolve(nodeState.output)
-									}
 
-									// Create new output first; delete old output after dependents update.
-									const priorState = { ...nodeState }
-									newResourceState = await createResource(node, appState.idempotentToken!, input, opt)
-
-									// Resolve immediately so dependents can access the new output
-									if (newResourceState.output) {
-										meta.resolve(newResourceState.output)
-									}
-
-									if (!meta.config?.retainOnDelete) {
-										appState.pendingDeletes ??= {}
-										appState.pendingDeletes[meta.urn] = priorState
-									}
-								} else {
-									// Replace resource while safely detaching dependents first.
-									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
-										if (!isResource(dependentNode)) {
-											continue
-										}
-
-										const dependentMeta = getMeta(dependentNode)
-										if (!dependentMeta.dependencies.has(meta.urn)) {
-											continue
-										}
-
-										if (plannedDependents.has(dependentUrn)) {
-											continue
-										}
-
-										const dependentStackState = stackStates.get(dependentMeta.stack.urn)
-										const dependentState = dependentStackState?.nodes[dependentUrn]
-										if (!dependentStackState || !dependentState) {
-											continue
-										}
-
-										// Only operate on inputs that actually reference this dependency.
-										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn)
-										if (dependencyPaths.length === 0) {
-											continue
-										}
-
-										// Detach dependency references before deleting the old dependency.
-										const detachedInput = stripDependencyInputs(
-											dependentState.input,
-											dependentMeta.input,
-											meta.urn
+										newResourceState = await replaceResource(
+											node,
+											appState.idempotentToken!,
+											nodeState.input,
+											nodeState.output,
+											input,
+											opt
 										)
 
-										if (compareState(dependentState.input, detachedInput)) {
-											continue
-										}
-
-										plannedDependents.add(dependentUrn)
-
-										let dependentRequiresReplacement = false
-										const dependentProvider = findProvider(opt.providers, dependentMeta.provider)
-										if (dependentProvider.planResourceChange) {
-											try {
-												const dependentPlan = await dependentProvider.planResourceChange({
-													type: dependentMeta.type,
-													priorState: dependentState.output,
-													proposedState: detachedInput,
-												})
-												dependentRequiresReplacement = dependentPlan.requiresReplacement
-											} catch (error) {
-												throw ResourceError.wrap(
-													dependentMeta.urn,
-													dependentMeta.type,
-													'update',
-													error
-												)
-											}
-										}
-
-										if (dependentRequiresReplacement) {
-											// If a dependent can't be updated, it must be deleted/recreated.
-											if (
-												!allowsDependentReplace(
-													dependentMeta.config?.replaceOnChanges,
-													dependencyPaths
-												)
-											) {
-												throw ResourceError.wrap(
-													dependentMeta.urn,
-													dependentMeta.type,
-													'update',
-													new Error(
-														`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`
-													)
-												)
-											}
-
-											await deleteResource(
-												appState.idempotentToken!,
-												dependentUrn,
-												dependentState,
-												opt
-											)
-											delete dependentStackState.nodes[dependentUrn]
-										} else {
-											// Update dependents to detach now and reattach later.
-											const updated = await updateResource(
-												dependentNode,
-												appState.idempotentToken!,
-												dependentState.input,
-												dependentState.output,
-												detachedInput,
-												opt
-											)
-
-											Object.assign(dependentState, {
-												input: detachedInput,
-												...updated,
-											})
-
-											forcedUpdateDependents.add(dependentUrn)
+										// Resolve immediately so dependents can access the new output
+										if (newResourceState.output) {
+											meta.resolve(newResourceState.output)
 										}
 									}
+								} else {
+									// --------------------------------------------------
+									// Update resource
 
-									newResourceState = await replaceResource(
+									newResourceState = await updateResource(
 										node,
 										appState.idempotentToken!,
 										nodeState.input,
@@ -515,36 +548,18 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 										opt
 									)
 
-									// Resolve immediately so dependents can access the new output
-									if (newResourceState.output) {
-										meta.resolve(newResourceState.output)
+									if (ignoreReplace) {
+										forcedUpdateDependents.delete(meta.urn)
 									}
 								}
-							} else {
-								// --------------------------------------------------
-								// Update resource
 
-								newResourceState = await updateResource(
-									node,
-									appState.idempotentToken!,
-									nodeState.input,
-									nodeState.output,
+								Object.assign(nodeState, {
 									input,
-									opt
-								)
-
-								if (ignoreReplace) {
-									forcedUpdateDependents.delete(meta.urn)
-								}
+									drifted: undefined,
+									...newResourceState,
+									...partialNewResourceState,
+								})
 							}
-
-							Object.assign(nodeState, {
-								input,
-								...newResourceState,
-								...partialNewResourceState,
-							})
-						} else {
-							Object.assign(nodeState, partialNewResourceState)
 						}
 					}
 

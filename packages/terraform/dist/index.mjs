@@ -1,5 +1,6 @@
 import { camelCase, pascalCase, snakeCase } from "change-case";
 import { ResourceNotFound, createDebugger, createMeta, nodeMetaSymbol } from "@terraforge/core";
+import { pack, unpack } from "msgpackr";
 import { credentials, loadPackageDefinition } from "@grpc/grpc-js";
 import { fromJSON } from "@grpc/proto-loader";
 import jszip from "jszip";
@@ -8,7 +9,6 @@ import { arch, homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { compare } from "semver";
 import { spawn } from "node:child_process";
-import { pack, unpack } from "msgpackr";
 
 //#region src/type-gen.ts
 const tab = (indent) => {
@@ -216,6 +216,261 @@ const generateValue = (prop, ctx) => {
 };
 
 //#endregion
+//#region src/plugin/version/util.ts
+const stableStringify = (value) => {
+	return JSON.stringify(value, (_, item) => {
+		if (item !== null && item instanceof Object && !Array.isArray(item)) return Object.keys(item).sort().reduce((sorted, key) => {
+			sorted[key] = item[key];
+			return sorted;
+		}, {});
+		return item;
+	});
+};
+const sortStateValues = (values) => {
+	return [...values].sort((left, right) => {
+		const l = stableStringify(left);
+		const r = stableStringify(right);
+		if (l < r) return -1;
+		if (l > r) return 1;
+		return 0;
+	});
+};
+const tryNormalizeJsonString = (value) => {
+	const trimmed = value.trim();
+	if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
+	try {
+		return stableStringify(JSON.parse(trimmed));
+	} catch {
+		return value;
+	}
+};
+const uniqueStateValues = (values) => {
+	const seen = /* @__PURE__ */ new Set();
+	return values.filter((value) => {
+		const key = stableStringify(value);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+};
+const encodeDynamicValue = (value) => {
+	return {
+		msgpack: pack(value),
+		json: value
+	};
+};
+const decodeDynamicValue = (value) => {
+	return unpack(value.msgpack);
+};
+const getResourceSchema = (resources, type) => {
+	const resource = resources[type];
+	if (!resource) throw new Error(`Unknown resource type: ${type}`);
+	return resource;
+};
+const formatAttributePath = (state) => {
+	if (!state) return [];
+	return state.map((item) => {
+		if (!item.steps) throw new Error("AttributePath should always have steps");
+		return item.steps.map((attr) => {
+			if ("attributeName" in attr) return attr.attributeName;
+			if ("elementKeyString" in attr) return attr.elementKeyString;
+			if ("elementKeyInt" in attr) return attr.elementKeyInt;
+			throw new Error("AttributePath step should always have an element");
+		});
+	});
+};
+const getNestedValue = (obj, path) => {
+	let current = obj;
+	for (const key of path) {
+		if (current === null || current === void 0) return current;
+		if (Array.isArray(current)) current = current[key];
+		else if (typeof current === "object") current = current[key];
+		else return;
+	}
+	return current;
+};
+const filterRequiresReplace = (paths, priorState, proposedState) => {
+	return paths.filter((path) => {
+		const priorValue = getNestedValue(priorState, path);
+		const proposedValue = getNestedValue(proposedState, path);
+		return JSON.stringify(priorValue) !== JSON.stringify(proposedValue);
+	});
+};
+var IncorrectType = class extends TypeError {
+	constructor(type, path) {
+		super(`${path.join(".")} should be a ${type}`);
+	}
+};
+const isEmptyOutputValue = (value) => {
+	if (value === null || typeof value === "undefined") return true;
+	if (Array.isArray(value)) return value.length === 0;
+	if (typeof value === "object") return Object.keys(value).length === 0;
+	return false;
+};
+const shouldOmitOutputValue = (schema, value) => {
+	if (!(schema.optional || schema.computed)) return false;
+	return isEmptyOutputValue(value);
+};
+const hasInputValue = (value) => typeof value !== "undefined";
+const shouldIncludeFieldForComparison = (schema, inputValue) => {
+	return schema.required || hasInputValue(inputValue);
+};
+const isContainerSchema = (schema) => {
+	return [
+		"array",
+		"record",
+		"object",
+		"array-object"
+	].includes(schema.type);
+};
+const isEmptyStructuralInput = (value) => {
+	if (value === null || typeof value === "undefined") return true;
+	if (Array.isArray(value)) return value.length === 0 || value.every((item) => isEmptyStructuralInput(item));
+	if (typeof value === "object") {
+		const entries = Object.values(value);
+		return entries.length === 0 || entries.every((item) => isEmptyStructuralInput(item));
+	}
+	return false;
+};
+const normalizeStateForComparison = (schema, state, inputState, allowStructuralFallback = true) => {
+	if (!shouldIncludeFieldForComparison(schema, inputState)) return;
+	if (allowStructuralFallback && (state === null || typeof state === "undefined") && isContainerSchema(schema) && isEmptyStructuralInput(inputState)) state = inputState;
+	if (state === null || typeof state === "undefined") return state;
+	if (schema.type === "array") {
+		if (!Array.isArray(state)) return state;
+		const filtered = state.map((item, index) => {
+			const inputItem = Array.isArray(inputState) ? inputState[index] : void 0;
+			return normalizeStateForComparison(schema.item, item, inputItem, allowStructuralFallback);
+		}).filter((item) => typeof item !== "undefined");
+		if (schema.collectionKind === "set") return sortStateValues(uniqueStateValues(filtered.filter((item) => item !== null)));
+		return filtered;
+	}
+	if (schema.type === "record") {
+		if (typeof state !== "object" || state === null) return state;
+		return Object.fromEntries(Object.entries(state).flatMap(([key, value]) => {
+			const inputValue = inputState && typeof inputState === "object" ? inputState[key] : void 0;
+			const normalized = normalizeStateForComparison(schema.item, value, inputValue, allowStructuralFallback);
+			if (typeof normalized === "undefined") return [];
+			return [[key, normalized]];
+		}));
+	}
+	if (schema.type === "object") {
+		if (typeof state !== "object" || state === null) return state;
+		const normalized = Object.fromEntries(Object.entries(schema.properties).flatMap(([key, prop]) => {
+			const stateValue = state[camelCase(key)];
+			const normalized$1 = normalizeStateForComparison(prop, stateValue, inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0, allowStructuralFallback);
+			if (typeof normalized$1 === "undefined") return [];
+			return [[camelCase(key), normalized$1]];
+		}));
+		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) return normalizeStateForComparison(schema, inputState, inputState, false);
+		return normalized;
+	}
+	if (schema.type === "array-object") {
+		if (typeof state !== "object" || state === null) return state;
+		const normalized = Object.fromEntries(Object.entries(schema.properties).flatMap(([key, prop]) => {
+			const stateValue = state[camelCase(key)];
+			const normalized$1 = normalizeStateForComparison(prop, stateValue, inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0, allowStructuralFallback);
+			if (typeof normalized$1 === "undefined") return [];
+			return [[camelCase(key), normalized$1]];
+		}));
+		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) return normalizeStateForComparison(schema, inputState, inputState, false);
+		return normalized;
+	}
+	if (schema.type === "string") {
+		if (typeof state === "string") return tryNormalizeJsonString(state);
+	}
+	return state;
+};
+const formatInputState = (schema, state, includeSchemaFields = true, path = []) => {
+	if (state === null) return null;
+	if (typeof state === "undefined") return null;
+	if (schema.type === "unknown") return state;
+	if (schema.type === "string") {
+		if (typeof state === "string") return state;
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "number") {
+		if (typeof state === "number") return state;
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "boolean") {
+		if (typeof state === "boolean") return state;
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "array") {
+		if (Array.isArray(state)) return state.map((item, i) => formatInputState(schema.item, item, includeSchemaFields, [...path, i]));
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "record") {
+		if (typeof state === "object" && state !== null) {
+			const record = {};
+			for (const [key, value] of Object.entries(state)) record[key] = formatInputState(schema.item, value, includeSchemaFields, [...path, key]);
+			return record;
+		}
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "object" || schema.type === "array-object") {
+		if (typeof state === "object" && state !== null) {
+			const object = {};
+			if (includeSchemaFields) for (const [key, prop] of Object.entries(schema.properties)) {
+				const value = state[camelCase(key)];
+				object[key] = formatInputState(prop, value, true, [...path, key]);
+			}
+			else for (const [key, value] of Object.entries(state)) {
+				const prop = schema.properties[snakeCase(key)];
+				if (prop) object[key] = formatInputState(prop, value, false, [...path, key]);
+			}
+			if (schema.type === "array-object") return [object];
+			return object;
+		}
+		throw new IncorrectType(schema.type, path);
+	}
+	throw new Error(`Unknown schema type: ${schema.type}`);
+};
+const formatOutputState = (schema, state, path = []) => {
+	if (state === null || state === void 0) return null;
+	if (schema.type === "array") {
+		if (Array.isArray(state)) return state.map((item, i) => formatOutputState(schema.item, item, [...path, i]));
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "record") {
+		if (typeof state === "object" && state !== null) {
+			const record = {};
+			for (const [key, value] of Object.entries(state)) record[key] = formatOutputState(schema.item, value, [...path, key]);
+			return record;
+		}
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "object") {
+		if (typeof state === "object" && state !== null) {
+			const object = {};
+			for (const [key, prop] of Object.entries(schema.properties)) {
+				const value = state[key];
+				const formatted = formatOutputState(prop, value, [...path, key]);
+				if (shouldOmitOutputValue(prop, formatted)) continue;
+				object[camelCase(key)] = formatted;
+			}
+			return object;
+		}
+		throw new IncorrectType(schema.type, path);
+	}
+	if (schema.type === "array-object") {
+		if (Array.isArray(state)) if (state.length === 1) {
+			const object = {};
+			for (const [key, prop] of Object.entries(schema.properties)) {
+				const value = state[0][key];
+				const formatted = formatOutputState(prop, value, [...path, key]);
+				if (shouldOmitOutputValue(prop, formatted)) continue;
+				object[camelCase(key)] = formatted;
+			}
+			return object;
+		} else return null;
+		throw new IncorrectType(schema.type, path);
+	}
+	return state;
+};
+
+//#endregion
 //#region src/provider.ts
 var TerraformProvider = class {
 	configured;
@@ -304,6 +559,23 @@ var TerraformProvider = class {
 		const data = await (await this.configure()).readDataSource(type, state);
 		if (!data) throw new Error(`Data source not found ${type}`);
 		return { state: data };
+	}
+	async refreshResource({ type, priorInputState, priorOutputState }) {
+		const plugin = await this.configure();
+		const schema = getResourceSchema(plugin.schema().resources, type);
+		const refreshedState = await plugin.readResource(type, priorOutputState);
+		if (!refreshedState) return { kind: "deleted" };
+		const normalizedPriorInputState = normalizeStateForComparison(schema, priorInputState, priorInputState);
+		const normalizedRefreshedState = normalizeStateForComparison(schema, refreshedState, priorInputState);
+		if (stableStringify(normalizedPriorInputState) === stableStringify(normalizedRefreshedState)) return {
+			kind: "unchanged",
+			state: refreshedState
+		};
+		return {
+			kind: "updated",
+			state: refreshedState,
+			inputState: normalizedRefreshedState
+		};
 	}
 };
 
@@ -1858,7 +2130,8 @@ const parseNestedBlock = (block) => {
 	if (type === "array" || type === "record") return {
 		...prop,
 		type,
-		item
+		item,
+		collectionKind: block.nesting === NestingMode.SET ? "set" : "list"
 	};
 	if (type === "array-object") return {
 		...prop,
@@ -1905,12 +2178,14 @@ const parseAttribute = (attr) => {
 };
 const parseAttributeType = (item) => {
 	if (Array.isArray(item)) {
-		const type$1 = parseType(item[0]);
+		const sourceType = item[0];
+		const type$1 = parseType(sourceType);
 		if (type$1 === "array" || type$1 === "record" && item) {
 			const record = item[1];
 			return {
 				type: type$1,
-				item: parseAttributeType(record)
+				item: parseAttributeType(record),
+				collectionKind: sourceType === "set" ? "set" : "list"
 			};
 		}
 		if (type$1 === "object") {
@@ -1945,141 +2220,6 @@ const parseType = (type) => {
 	if (type === "map") return "record";
 	if (type === "dynamic") return "unknown";
 	throw new Error(`Invalid type: ${type}`);
-};
-
-//#endregion
-//#region src/plugin/version/util.ts
-const encodeDynamicValue = (value) => {
-	return {
-		msgpack: pack(value),
-		json: value
-	};
-};
-const decodeDynamicValue = (value) => {
-	return unpack(value.msgpack);
-};
-const getResourceSchema = (resources, type) => {
-	const resource = resources[type];
-	if (!resource) throw new Error(`Unknown resource type: ${type}`);
-	return resource;
-};
-const formatAttributePath = (state) => {
-	if (!state) return [];
-	return state.map((item) => {
-		if (!item.steps) throw new Error("AttributePath should always have steps");
-		return item.steps.map((attr) => {
-			if ("attributeName" in attr) return attr.attributeName;
-			if ("elementKeyString" in attr) return attr.elementKeyString;
-			if ("elementKeyInt" in attr) return attr.elementKeyInt;
-			throw new Error("AttributePath step should always have an element");
-		});
-	});
-};
-const getNestedValue = (obj, path) => {
-	let current = obj;
-	for (const key of path) {
-		if (current === null || current === void 0) return current;
-		if (Array.isArray(current)) current = current[key];
-		else if (typeof current === "object") current = current[key];
-		else return;
-	}
-	return current;
-};
-const filterRequiresReplace = (paths, priorState, proposedState) => {
-	return paths.filter((path) => {
-		const priorValue = getNestedValue(priorState, path);
-		const proposedValue = getNestedValue(proposedState, path);
-		return JSON.stringify(priorValue) !== JSON.stringify(proposedValue);
-	});
-};
-var IncorrectType = class extends TypeError {
-	constructor(type, path) {
-		super(`${path.join(".")} should be a ${type}`);
-	}
-};
-const formatInputState = (schema, state, includeSchemaFields = true, path = []) => {
-	if (state === null) return null;
-	if (typeof state === "undefined") return null;
-	if (schema.type === "unknown") return state;
-	if (schema.type === "string") {
-		if (typeof state === "string") return state;
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "number") {
-		if (typeof state === "number") return state;
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "boolean") {
-		if (typeof state === "boolean") return state;
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "array") {
-		if (Array.isArray(state)) return state.map((item, i) => formatInputState(schema.item, item, includeSchemaFields, [...path, i]));
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "record") {
-		if (typeof state === "object" && state !== null) {
-			const record = {};
-			for (const [key, value] of Object.entries(state)) record[key] = formatInputState(schema.item, value, includeSchemaFields, [...path, key]);
-			return record;
-		}
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "object" || schema.type === "array-object") {
-		if (typeof state === "object" && state !== null) {
-			const object = {};
-			if (includeSchemaFields) for (const [key, prop] of Object.entries(schema.properties)) {
-				const value = state[camelCase(key)];
-				object[key] = formatInputState(prop, value, true, [...path, key]);
-			}
-			else for (const [key, value] of Object.entries(state)) {
-				const prop = schema.properties[snakeCase(key)];
-				if (prop) object[key] = formatInputState(prop, value, false, [...path, key]);
-			}
-			if (schema.type === "array-object") return [object];
-			return object;
-		}
-		throw new IncorrectType(schema.type, path);
-	}
-	throw new Error(`Unknown schema type: ${schema.type}`);
-};
-const formatOutputState = (schema, state, path = []) => {
-	if (state === null || state === void 0) return null;
-	if (schema.type === "array") {
-		if (Array.isArray(state)) return state.map((item, i) => formatOutputState(schema.item, item, [...path, i]));
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "record") {
-		if (typeof state === "object" && state !== null) {
-			const record = {};
-			for (const [key, value] of Object.entries(state)) record[key] = formatOutputState(schema.item, value, [...path, key]);
-			return record;
-		}
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "object") {
-		if (typeof state === "object" && state !== null) {
-			const object = {};
-			for (const [key, prop] of Object.entries(schema.properties)) {
-				const value = state[key];
-				object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
-			}
-			return object;
-		}
-		throw new IncorrectType(schema.type, path);
-	}
-	if (schema.type === "array-object") {
-		if (Array.isArray(state)) if (state.length === 1) {
-			const object = {};
-			for (const [key, prop] of Object.entries(schema.properties)) {
-				const value = state[0][key];
-				object[camelCase(key)] = formatOutputState(prop, value, [...path, key]);
-			}
-			return object;
-		} else return null;
-		throw new IncorrectType(schema.type, path);
-	}
-	return state;
 };
 
 //#endregion

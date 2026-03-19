@@ -1,5 +1,6 @@
 import {
 	PlanProps,
+	RefreshResourceProps,
 	ResourceNotFound,
 	type CreateProps,
 	type DeleteProps,
@@ -11,6 +12,7 @@ import {
 } from '@terraforge/core'
 
 import { Plugin } from './plugin/version/type.ts'
+import { getResourceSchema, normalizeStateForComparison, stableStringify } from './plugin/version/util.ts'
 
 export class TerraformProvider implements Provider {
 	private configured?: Promise<void>
@@ -152,6 +154,38 @@ export class TerraformProvider implements Provider {
 
 		return {
 			state: data,
+		}
+	}
+
+	async refreshResource({ type, priorInputState, priorOutputState }: RefreshResourceProps) {
+		const plugin = await this.configure()
+		const schema = getResourceSchema(plugin.schema().resources, type)
+		const refreshedState = await plugin.readResource(type, priorOutputState)
+
+		if (!refreshedState) {
+			return {
+				kind: 'deleted' as const,
+			}
+		}
+
+		const normalizedPriorInputState = normalizeStateForComparison(
+			schema,
+			priorInputState,
+			priorInputState
+		) as State
+		const normalizedRefreshedState = normalizeStateForComparison(schema, refreshedState, priorInputState) as State
+
+		if (stableStringify(normalizedPriorInputState) === stableStringify(normalizedRefreshedState)) {
+			return {
+				kind: 'unchanged' as const,
+				state: refreshedState,
+			}
+		}
+
+		return {
+			kind: 'updated' as const,
+			state: refreshedState,
+			inputState: normalizedRefreshedState,
 		}
 	}
 

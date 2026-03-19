@@ -915,16 +915,12 @@ const deployApp = async (app, opt) => {
 			});
 		}
 	}
-	for (const [urn, stackState] of entries(appState.stacks)) {
-		const found = app.stacks.find((stack) => {
-			return stack.urn === urn;
-		});
-		const filtered = opt.filters ? opt.filters.find((filter) => filter === stackState.name) : true;
-		if (!found && filtered) for (const [urn$1, nodeState] of entries(stackState.nodes)) graph.add(urn$1, dependentsOn(allNodes, urn$1), async () => {
-			if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn$1, nodeState, opt));
-			delete stackState.nodes[urn$1];
-		});
-	}
+	for (const [urn, stackState] of entries(appState.stacks)) if (!app.stacks.find((stack) => {
+		return stack.urn === urn;
+	})) for (const [urn$1, nodeState] of entries(stackState.nodes)) graph.add(urn$1, dependentsOn(allNodes, urn$1), async () => {
+		if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn$1, nodeState, opt));
+		delete stackState.nodes[urn$1];
+	});
 	for (const stack of stacks) {
 		const stackState = stackStates.get(stack.urn);
 		for (const [urn, nodeState] of entries(stackState.nodes)) if (!stack.nodes.find((r) => getMeta(r).urn === urn)) graph.add(urn, dependentsOn(allNodes, urn), async () => {
@@ -953,12 +949,14 @@ const deployApp = async (app, opt) => {
 							const dataSourceState = await getDataSource(meta$1, input, opt);
 							nodeState = stackState.nodes[meta$1.urn] = {
 								...dataSourceState,
+								drifted: void 0,
 								...partialNewResourceState
 							};
-						} else if (!compareState(nodeState.input, input)) {
+						} else if (!compareState(nodeState.input, input) || nodeState.drifted) {
 							const dataSourceState = await getDataSource(meta$1, input, opt);
 							Object.assign(nodeState, {
 								...dataSourceState,
+								drifted: void 0,
 								...partialNewResourceState
 							});
 						} else Object.assign(nodeState, partialNewResourceState);
@@ -980,94 +978,100 @@ const deployApp = async (app, opt) => {
 								...partialNewResourceState
 							};
 						}
-						else if (!compareState(nodeState.input, input)) {
-							let newResourceState;
-							const ignoreReplace = forcedUpdateDependents.has(meta$1.urn);
-							if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
-								meta$1.resolve(input);
-								try {
+						else {
+							const inputChanged = !compareState(nodeState.input, input);
+							const hasDrift = !!nodeState.drifted;
+							if (!inputChanged && !hasDrift) Object.assign(nodeState, partialNewResourceState);
+							else {
+								let newResourceState;
+								const ignoreReplace = forcedUpdateDependents.has(meta$1.urn);
+								if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
+									meta$1.resolve(input);
+									try {
+										for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
+											if (!isResource(dependentNode)) continue;
+											const dependentMeta = getMeta(dependentNode);
+											if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
+											const dependentStackState = stackStates.get(dependentMeta.stack.urn);
+											const dependentState = dependentStackState?.nodes[dependentUrn];
+											if (!dependentStackState || !dependentState) continue;
+											const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
+											if (dependencyPaths.length === 0) continue;
+											const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
+											if (dependentProvider.planResourceChange) {
+												const dependentProposedInput = await resolveInputs(dependentMeta.input);
+												if ((await dependentProvider.planResourceChange({
+													type: dependentMeta.type,
+													priorState: dependentState.output,
+													proposedState: dependentProposedInput
+												})).requiresReplacement) {
+													if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+												}
+											}
+										}
+									} finally {
+										meta$1.resolve(nodeState.output);
+									}
+									const priorState = { ...nodeState };
+									newResourceState = await createResource(node, appState.idempotentToken, input, opt);
+									if (newResourceState.output) meta$1.resolve(newResourceState.output);
+									if (!meta$1.config?.retainOnDelete) {
+										appState.pendingDeletes ??= {};
+										appState.pendingDeletes[meta$1.urn] = priorState;
+									}
+								} else {
 									for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
 										if (!isResource(dependentNode)) continue;
 										const dependentMeta = getMeta(dependentNode);
 										if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
+										if (plannedDependents.has(dependentUrn)) continue;
 										const dependentStackState = stackStates.get(dependentMeta.stack.urn);
 										const dependentState = dependentStackState?.nodes[dependentUrn];
 										if (!dependentStackState || !dependentState) continue;
 										const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
 										if (dependencyPaths.length === 0) continue;
+										const detachedInput = stripDependencyInputs(dependentState.input, dependentMeta.input, meta$1.urn);
+										if (compareState(dependentState.input, detachedInput)) continue;
+										plannedDependents.add(dependentUrn);
+										let dependentRequiresReplacement = false;
 										const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
-										if (dependentProvider.planResourceChange) {
-											const dependentProposedInput = await resolveInputs(dependentMeta.input);
-											if ((await dependentProvider.planResourceChange({
+										if (dependentProvider.planResourceChange) try {
+											dependentRequiresReplacement = (await dependentProvider.planResourceChange({
 												type: dependentMeta.type,
 												priorState: dependentState.output,
-												proposedState: dependentProposedInput
-											})).requiresReplacement) {
-												if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
-											}
+												proposedState: detachedInput
+											})).requiresReplacement;
+										} catch (error) {
+											throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", error);
+										}
+										if (dependentRequiresReplacement) {
+											if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+											await deleteResource(appState.idempotentToken, dependentUrn, dependentState, opt);
+											delete dependentStackState.nodes[dependentUrn];
+										} else {
+											const updated = await updateResource(dependentNode, appState.idempotentToken, dependentState.input, dependentState.output, detachedInput, opt);
+											Object.assign(dependentState, {
+												input: detachedInput,
+												...updated
+											});
+											forcedUpdateDependents.add(dependentUrn);
 										}
 									}
-								} finally {
-									meta$1.resolve(nodeState.output);
+									newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
+									if (newResourceState.output) meta$1.resolve(newResourceState.output);
 								}
-								const priorState = { ...nodeState };
-								newResourceState = await createResource(node, appState.idempotentToken, input, opt);
-								if (newResourceState.output) meta$1.resolve(newResourceState.output);
-								if (!meta$1.config?.retainOnDelete) {
-									appState.pendingDeletes ??= {};
-									appState.pendingDeletes[meta$1.urn] = priorState;
+								else {
+									newResourceState = await updateResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
+									if (ignoreReplace) forcedUpdateDependents.delete(meta$1.urn);
 								}
-							} else {
-								for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
-									if (!isResource(dependentNode)) continue;
-									const dependentMeta = getMeta(dependentNode);
-									if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
-									if (plannedDependents.has(dependentUrn)) continue;
-									const dependentStackState = stackStates.get(dependentMeta.stack.urn);
-									const dependentState = dependentStackState?.nodes[dependentUrn];
-									if (!dependentStackState || !dependentState) continue;
-									const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
-									if (dependencyPaths.length === 0) continue;
-									const detachedInput = stripDependencyInputs(dependentState.input, dependentMeta.input, meta$1.urn);
-									if (compareState(dependentState.input, detachedInput)) continue;
-									plannedDependents.add(dependentUrn);
-									let dependentRequiresReplacement = false;
-									const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
-									if (dependentProvider.planResourceChange) try {
-										dependentRequiresReplacement = (await dependentProvider.planResourceChange({
-											type: dependentMeta.type,
-											priorState: dependentState.output,
-											proposedState: detachedInput
-										})).requiresReplacement;
-									} catch (error) {
-										throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", error);
-									}
-									if (dependentRequiresReplacement) {
-										if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
-										await deleteResource(appState.idempotentToken, dependentUrn, dependentState, opt);
-										delete dependentStackState.nodes[dependentUrn];
-									} else {
-										const updated = await updateResource(dependentNode, appState.idempotentToken, dependentState.input, dependentState.output, detachedInput, opt);
-										Object.assign(dependentState, {
-											input: detachedInput,
-											...updated
-										});
-										forcedUpdateDependents.add(dependentUrn);
-									}
-								}
-								newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
-								if (newResourceState.output) meta$1.resolve(newResourceState.output);
+								Object.assign(nodeState, {
+									input,
+									drifted: void 0,
+									...newResourceState,
+									...partialNewResourceState
+								});
 							}
-							else {
-								newResourceState = await updateResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
-								if (ignoreReplace) forcedUpdateDependents.delete(meta$1.urn);
-							}
-							Object.assign(nodeState, {
-								input,
-								...newResourceState,
-								...partialNewResourceState
-							});
-						} else Object.assign(nodeState, partialNewResourceState);
+						}
 					}
 					if (nodeState?.output) meta.resolve(nodeState.output);
 				});
@@ -1111,46 +1115,69 @@ const hydrate = async (app, opt) => {
 
 //#endregion
 //#region src/workspace/procedure/refresh.ts
+const createDeleteOperation = (urn, stackState, onCommit) => {
+	return {
+		urn,
+		operation: "delete",
+		commit() {
+			delete stackState.nodes[urn];
+			onCommit();
+		}
+	};
+};
+const createUpdateOperation = (urn, state, before, after, nodeState, onCommit) => {
+	return {
+		urn,
+		operation: "update",
+		before: structuredClone(before),
+		after: structuredClone(after),
+		commit() {
+			nodeState.output = state;
+			nodeState.drifted = true;
+			onCommit();
+		}
+	};
+};
 const refresh = async (app, opt) => {
 	const appState = await opt.backend.state.get(app.urn);
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10);
 	let filteredStacks = Object.values(appState?.stacks ?? {});
-	if (opt.filters && opt.filters.length > 0) filteredStacks = Object.entries(appState?.stacks ?? {}).filter(([stackName]) => {
-		return opt.filters.includes(stackName);
-	}).map(([_, state]) => state);
+	if (opt.filters && opt.filters.length > 0) filteredStacks = Object.values(appState?.stacks ?? {}).filter((stackState) => {
+		return opt.filters.includes(stackState.name);
+	});
+	let committed = 0;
 	if (appState && filteredStacks.length > 0) {
 		const filteredOperations = (await Promise.all(filteredStacks.map((stackState) => {
 			return Promise.all(Object.entries(stackState.nodes).map(([_urn, nodeState]) => {
 				const urn = _urn;
 				return queue(async () => {
 					const provider = findProvider(opt.providers, nodeState.provider);
-					let result;
-					if (nodeState.tag === "data") result = await provider.getData?.({
+					if (nodeState.tag === "data") {
+						const result = await provider.getData?.({
+							type: nodeState.type,
+							state: nodeState.output
+						});
+						if (!result) return createDeleteOperation(urn, stackState, () => {
+							committed++;
+						});
+						if (compareState(result.state, nodeState.output)) return;
+						return createUpdateOperation(urn, result.state, nodeState.input, result.state, nodeState, () => {
+							committed++;
+						});
+					}
+					if (!provider.refreshResource) return;
+					const refreshed = await provider.refreshResource({
 						type: nodeState.type,
-						state: nodeState.output
+						priorInputState: nodeState.input,
+						priorOutputState: nodeState.output
 					});
-					else result = await provider.getResource({
-						type: nodeState.type,
-						state: nodeState.output
+					if (!refreshed || refreshed.kind === "unchanged") return;
+					if (refreshed.kind === "deleted") return createDeleteOperation(urn, stackState, () => {
+						committed++;
 					});
-					console.log(urn);
-					console.log(nodeState.output);
-					console.log(result?.state);
-					if (!result) return {
-						urn,
-						operation: "delete",
-						commit() {
-							delete stackState.nodes[urn];
-						}
-					};
-					else if (!compareState(result.state, nodeState.output)) return {
-						urn,
-						operation: "update",
-						commit() {
-							nodeState.input = result.state;
-							nodeState.output = result.state;
-						}
-					};
+					return createUpdateOperation(urn, refreshed.state, nodeState.input, refreshed.inputState, nodeState, () => {
+						committed++;
+					});
 				});
 			}));
 		}))).flat().filter((op) => !!op);
@@ -1158,7 +1185,7 @@ const refresh = async (app, opt) => {
 		return {
 			operations: filteredOperations,
 			async commit() {
-				await opt.backend.state.update(app.urn, appState);
+				if (committed > 0) await opt.backend.state.update(app.urn, appState);
 			}
 		};
 	}
@@ -1678,61 +1705,62 @@ const createCustomResourceClass = (providerId, resourceType) => {
 //#region src/custom/provider.ts
 const createCustomProvider = (providerId, resourceProviders) => {
 	const version = 1;
+	const hasRefreshResource = Object.values(resourceProviders).some((provider$1) => !!provider$1.refreshResource);
 	const getProvider = (type) => {
-		const provider = resourceProviders[type];
-		if (!provider) throw new Error(`The "${providerId}" provider doesn't support the "${type}" resource type.`);
-		return provider;
+		const provider$1 = resourceProviders[type];
+		if (!provider$1) throw new Error(`The "${providerId}" provider doesn't support the "${type}" resource type.`);
+		return provider$1;
 	};
-	return {
+	const provider = {
 		ownResource(id) {
 			return id === `custom:${providerId}`;
 		},
 		async getResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.getResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.getResource) return {
 				version,
 				state: props.state
 			};
 			return {
 				version,
-				state: await provider.getResource(props)
+				state: await provider$1.getResource(props)
 			};
 		},
 		async createResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.createResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.createResource) return {
 				version,
 				state: props.state
 			};
 			return {
 				version,
-				state: await provider.createResource(props)
+				state: await provider$1.createResource(props)
 			};
 		},
 		async updateResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.updateResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.updateResource) return {
 				version,
 				state: props.proposedState
 			};
 			return {
 				version,
-				state: await provider.updateResource(props)
+				state: await provider$1.updateResource(props)
 			};
 		},
 		async deleteResource({ type, ...props }) {
 			await getProvider(type).deleteResource?.(props);
 		},
 		async planResourceChange({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.planResourceChange) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.planResourceChange) return {
 				version,
 				state: props.proposedState,
 				requiresReplacement: false
 			};
 			return {
 				version,
-				...await provider.planResourceChange(props)
+				...await provider$1.planResourceChange(props)
 			};
 		},
 		async getData({ type, ...props }) {
@@ -1742,6 +1770,10 @@ const createCustomProvider = (providerId, resourceProviders) => {
 			};
 		}
 	};
+	if (hasRefreshResource) provider.refreshResource = async ({ type, ...props }) => {
+		return await getProvider(type).refreshResource?.(props);
+	};
+	return provider;
 };
 
 //#endregion

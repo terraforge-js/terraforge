@@ -26,7 +26,17 @@ export * from './backend/aws/s3-state.ts'
 export type { URN } from './urn.ts'
 export type { Resource, ResourceMeta, ResourceClass, ResourceConfig } from './resource.ts'
 export type { DataSource, DataSourceMeta, DataSourceFunction } from './data-source.ts'
-export type { Provider, CreateProps, UpdateProps, DeleteProps, GetDataProps, GetProps, PlanProps } from './provider.ts'
+export type {
+	Provider,
+	CreateProps,
+	UpdateProps,
+	DeleteProps,
+	GetDataProps,
+	GetProps,
+	PlanProps,
+	RefreshResourceProps,
+	RefreshResourceResult,
+} from './provider.ts'
 export type { Meta, Tag, State, Config } from './meta.ts'
 export type { Node } from './node.ts'
 export type { Input, OptionalInput } from './input.ts'

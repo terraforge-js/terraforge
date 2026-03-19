@@ -96,6 +96,7 @@ export type Property = {
 	| {
 			type: 'array' | 'record'
 			item: Property
+			collectionKind?: 'list' | 'set'
 	  }
 	| {
 			type: 'object' | 'array-object'
@@ -174,6 +175,7 @@ export const parseNestedBlock = (block: NestedBlock): Property => {
 			...prop,
 			type,
 			item,
+			collectionKind: block.nesting === NestingMode.SET ? 'set' : 'list',
 		}
 	}
 
@@ -250,13 +252,15 @@ export const parseAttribute = (attr: Attribute): Property => {
 
 export const parseAttributeType = (item: ParsedAttributeType): Property => {
 	if (Array.isArray(item)) {
-		const type = parseType(item[0])
+		const sourceType = item[0]
+		const type = parseType(sourceType)
 
 		if (type === 'array' || (type === 'record' && item)) {
 			const record = item[1] as ParsedAttributeType
 			return {
 				type,
 				item: parseAttributeType(record),
+				collectionKind: sourceType === 'set' ? 'set' : 'list',
 			}
 		}
 

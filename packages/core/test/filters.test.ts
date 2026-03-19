@@ -44,4 +44,26 @@ describe('filters', () => {
 
 		await expect(workspace.deploy(app, { filters: ['stack-2'] })).rejects.toThrowError()
 	})
+
+	it('should delete removed stacks even when deploying with filters', async () => {
+		reset()
+
+		const app1 = new App('app')
+		const stack1 = new Stack(app1, 'stack-1')
+		const stack2 = new Stack(app1, 'feature-1')
+
+		new Resource(stack1, 'r1', { id: '1' })
+		new Resource(stack2, 'r2', { id: '2' })
+
+		await workspace.deploy(app1)
+
+		const app2 = new App('app')
+		const nextStack1 = new Stack(app2, 'stack-1')
+		new Resource(nextStack1, 'r1', { id: '1' })
+
+		await workspace.deploy(app2, { filters: ['stack-1'] })
+
+		assertResourceExists('1')
+		assertResourceNotExists('2')
+	})
 })

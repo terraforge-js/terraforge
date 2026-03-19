@@ -38,6 +38,26 @@ export type GetDataProps<T = State> = {
 	state: T
 }
 
+export type RefreshResourceProps<T = State> = {
+	type: string
+	priorInputState: T
+	priorOutputState: T
+}
+
+export type RefreshResourceResult<T = State> =
+	| {
+			kind: 'unchanged'
+			state: T
+	  }
+	| {
+			kind: 'updated'
+			state: T
+			inputState: T
+	  }
+	| {
+			kind: 'deleted'
+	  }
+
 export interface Provider {
 	ownResource(id: string): boolean
 
@@ -67,6 +87,8 @@ export interface Provider {
 	getData?(props: GetDataProps): Promise<{
 		state: State
 	}>
+
+	refreshResource?(props: RefreshResourceProps): Promise<RefreshResourceResult | undefined>
 
 	destroy?(): Promise<void>
 }

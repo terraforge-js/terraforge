@@ -2,6 +2,60 @@ import { camelCase, snakeCase } from 'change-case'
 import { pack, unpack } from 'msgpackr'
 import { Property, RootProperty } from '../schema.ts'
 
+export const stableStringify = (value: unknown): string => {
+	return JSON.stringify(value, (_, item) => {
+		if (item !== null && item instanceof Object && !Array.isArray(item)) {
+			return Object.keys(item)
+				.sort()
+				.reduce((sorted: Record<string, unknown>, key) => {
+					sorted[key] = item[key as keyof typeof item]
+					return sorted
+				}, {})
+		}
+
+		return item
+	})
+}
+
+const sortStateValues = (values: unknown[]) => {
+	return [...values].sort((left, right) => {
+		const l = stableStringify(left)
+		const r = stableStringify(right)
+
+		if (l < r) return -1
+		if (l > r) return 1
+		return 0
+	})
+}
+
+const tryNormalizeJsonString = (value: string) => {
+	const trimmed = value.trim()
+
+	if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) {
+		return value
+	}
+
+	try {
+		return stableStringify(JSON.parse(trimmed))
+	} catch {
+		return value
+	}
+}
+
+const uniqueStateValues = (values: unknown[]) => {
+	const seen = new Set<string>()
+
+	return values.filter(value => {
+		const key = stableStringify(value)
+		if (seen.has(key)) {
+			return false
+		}
+
+		seen.add(key)
+		return true
+	})
+}
+
 export const encodeDynamicValue = (value: unknown) => {
 	return {
 		msgpack: pack(value),
@@ -110,6 +164,187 @@ class IncorrectType extends TypeError {
 	constructor(type: string, path: Array<string | number>) {
 		super(`${path.join('.')} should be a ${type}`)
 	}
+}
+
+const isEmptyOutputValue = (value: unknown): boolean => {
+	if (value === null || typeof value === 'undefined') {
+		return true
+	}
+
+	if (Array.isArray(value)) {
+		return value.length === 0
+	}
+
+	if (typeof value === 'object') {
+		return Object.keys(value).length === 0
+	}
+
+	return false
+}
+
+const shouldOmitOutputValue = (schema: Property, value: unknown) => {
+	if (!(schema.optional || schema.computed)) {
+		return false
+	}
+
+	return isEmptyOutputValue(value)
+}
+
+const hasInputValue = (value: unknown) => typeof value !== 'undefined'
+
+const shouldIncludeFieldForComparison = (schema: Property, inputValue: unknown) => {
+	return schema.required || hasInputValue(inputValue)
+}
+
+const isContainerSchema = (schema: Property) => {
+	return ['array', 'record', 'object', 'array-object'].includes(schema.type)
+}
+
+const isEmptyStructuralInput = (value: unknown): boolean => {
+	if (value === null || typeof value === 'undefined') {
+		return true
+	}
+
+	if (Array.isArray(value)) {
+		return value.length === 0 || value.every(item => isEmptyStructuralInput(item))
+	}
+
+	if (typeof value === 'object') {
+		const entries = Object.values(value)
+		return entries.length === 0 || entries.every(item => isEmptyStructuralInput(item))
+	}
+
+	return false
+}
+
+export const normalizeStateForComparison = (
+	schema: Property,
+	state: unknown,
+	inputState?: unknown,
+	allowStructuralFallback: boolean = true
+): unknown => {
+	if (!shouldIncludeFieldForComparison(schema, inputState)) {
+		return undefined
+	}
+
+	if (
+		allowStructuralFallback &&
+		(state === null || typeof state === 'undefined') &&
+		isContainerSchema(schema) &&
+		isEmptyStructuralInput(inputState)
+	) {
+		state = inputState
+	}
+
+	if (state === null || typeof state === 'undefined') {
+		return state
+	}
+
+	if (schema.type === 'array') {
+		if (!Array.isArray(state)) {
+			return state
+		}
+
+		const normalized = state.map((item, index) => {
+			const inputItem = Array.isArray(inputState) ? inputState[index] : undefined
+			return normalizeStateForComparison(schema.item, item, inputItem, allowStructuralFallback)
+		})
+		const filtered = normalized.filter(item => typeof item !== 'undefined')
+
+		if (schema.collectionKind === 'set') {
+			return sortStateValues(uniqueStateValues(filtered.filter(item => item !== null)))
+		}
+
+		return filtered
+	}
+
+	if (schema.type === 'record') {
+		if (typeof state !== 'object' || state === null) {
+			return state
+		}
+
+		return Object.fromEntries(
+			Object.entries(state).flatMap(([key, value]) => {
+				const inputValue =
+					inputState && typeof inputState === 'object' ? (inputState as Record<string, unknown>)[key] : undefined
+				const normalized = normalizeStateForComparison(schema.item, value, inputValue, allowStructuralFallback)
+
+				if (typeof normalized === 'undefined') {
+					return []
+				}
+
+				return [[key, normalized] as const]
+			})
+		)
+	}
+
+	if (schema.type === 'object') {
+		if (typeof state !== 'object' || state === null) {
+			return state
+		}
+
+		const normalized = Object.fromEntries(
+			Object.entries(schema.properties)
+				.flatMap(([key, prop]) => {
+					const stateValue = (state as Record<string, unknown>)[camelCase(key)]
+					const inputValue =
+						inputState && typeof inputState === 'object'
+							? (inputState as Record<string, unknown>)[camelCase(key)]
+							: undefined
+					const normalized = normalizeStateForComparison(prop, stateValue, inputValue, allowStructuralFallback)
+
+					if (typeof normalized === 'undefined') {
+						return []
+					}
+
+					return [[camelCase(key), normalized] as const]
+				})
+		)
+
+		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) {
+			return normalizeStateForComparison(schema, inputState, inputState, false)
+		}
+
+		return normalized
+	}
+
+	if (schema.type === 'array-object') {
+		if (typeof state !== 'object' || state === null) {
+			return state
+		}
+
+		const normalized = Object.fromEntries(
+			Object.entries(schema.properties)
+				.flatMap(([key, prop]) => {
+					const stateValue = (state as Record<string, unknown>)[camelCase(key)]
+					const inputValue =
+						inputState && typeof inputState === 'object'
+							? (inputState as Record<string, unknown>)[camelCase(key)]
+							: undefined
+					const normalized = normalizeStateForComparison(prop, stateValue, inputValue, allowStructuralFallback)
+
+					if (typeof normalized === 'undefined') {
+						return []
+					}
+
+					return [[camelCase(key), normalized] as const]
+				})
+		)
+
+		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) {
+			return normalizeStateForComparison(schema, inputState, inputState, false)
+		}
+
+		return normalized
+	}
+
+	if (schema.type === 'string') {
+		if (typeof state === 'string') {
+			return tryNormalizeJsonString(state)
+		}
+	}
+
+	return state
 }
 
 export const formatInputState = (
@@ -267,7 +502,13 @@ export const formatOutputState = (schema: Property, state: unknown, path: Array<
 
 			for (const [key, prop] of Object.entries(schema.properties)) {
 				const value = state[key as keyof typeof state]
-				object[camelCase(key)] = formatOutputState(prop, value, [...path, key])
+				const formatted = formatOutputState(prop, value, [...path, key])
+
+				if (shouldOmitOutputValue(prop, formatted)) {
+					continue
+				}
+
+				object[camelCase(key)] = formatted
 			}
 
 			return object
@@ -283,7 +524,13 @@ export const formatOutputState = (schema: Property, state: unknown, path: Array<
 
 				for (const [key, prop] of Object.entries(schema.properties)) {
 					const value = state[0][key as keyof typeof state]
-					object[camelCase(key)] = formatOutputState(prop, value, [...path, key])
+					const formatted = formatOutputState(prop, value, [...path, key])
+
+					if (shouldOmitOutputValue(prop, formatted)) {
+						continue
+					}
+
+					object[camelCase(key)] = formatted
 				}
 
 				return object

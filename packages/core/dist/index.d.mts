@@ -194,6 +194,7 @@ type NodeState = {
   provider: string;
   input: State;
   output: State;
+  drifted?: boolean;
   dependencies: URN[];
   lifecycle?: {
     retainOnDelete?: boolean;
@@ -252,6 +253,21 @@ type GetDataProps<T = State> = {
   type: string;
   state: T;
 };
+type RefreshResourceProps<T = State> = {
+  type: string;
+  priorInputState: T;
+  priorOutputState: T;
+};
+type RefreshResourceResult<T = State> = {
+  kind: 'unchanged';
+  state: T;
+} | {
+  kind: 'updated';
+  state: T;
+  inputState: T;
+} | {
+  kind: 'deleted';
+};
 interface Provider {
   ownResource(id: string): boolean;
   getResource(props: GetProps): Promise<{
@@ -275,6 +291,7 @@ interface Provider {
   getData?(props: GetDataProps): Promise<{
     state: State;
   }>;
+  refreshResource?(props: RefreshResourceProps): Promise<RefreshResourceResult | undefined>;
   destroy?(): Promise<void>;
 }
 //#endregion
@@ -356,11 +373,17 @@ declare class WorkSpace {
    * Refresh the state of the resources & data-sources inside your app.
    */
   refresh(app: App, options?: ProcedureOptions): Promise<{
-    operations: {
+    operations: ({
       urn: URN;
-      operation: "delete" | "update";
+      operation: "delete";
       commit(): void;
-    }[];
+    } | {
+      urn: URN;
+      operation: "update";
+      before: State;
+      after: State;
+      commit(): void;
+    })[];
     commit: () => Promise<void>;
   } | undefined>;
   /**
@@ -532,7 +555,8 @@ type CustomResourceProvider = Partial<{
     state: State;
     requiresReplacement: boolean;
   }>;
+  refreshResource?(props: Omit<RefreshResourceProps, 'type'>): Promise<RefreshResourceResult<State> | undefined>;
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type RefreshResourceProps, type RefreshResourceResult, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

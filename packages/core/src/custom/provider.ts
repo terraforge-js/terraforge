@@ -1,5 +1,15 @@
 import { State } from '../meta'
-import { CreateProps, DeleteProps, GetDataProps, GetProps, PlanProps, Provider, UpdateProps } from '../provider'
+import {
+	CreateProps,
+	DeleteProps,
+	GetDataProps,
+	GetProps,
+	PlanProps,
+	Provider,
+	RefreshResourceProps,
+	RefreshResourceResult,
+	UpdateProps,
+} from '../provider'
 
 export type CustomResourceProvider = Partial<{
 	getResource?(props: Omit<GetProps, 'type'>): Promise<State>
@@ -11,6 +21,7 @@ export type CustomResourceProvider = Partial<{
 		state: State
 		requiresReplacement: boolean
 	}>
+	refreshResource?(props: Omit<RefreshResourceProps, 'type'>): Promise<RefreshResourceResult<State> | undefined>
 }>
 
 export const createCustomProvider = (
@@ -18,6 +29,7 @@ export const createCustomProvider = (
 	resourceProviders: Record<string, CustomResourceProvider>
 ): Provider => {
 	const version = 1
+	const hasRefreshResource = Object.values(resourceProviders).some(provider => !!provider.refreshResource)
 
 	const getProvider = (type: string) => {
 		const provider = resourceProviders[type]
@@ -28,7 +40,7 @@ export const createCustomProvider = (
 		return provider
 	}
 
-	return {
+	const provider: Provider = {
 		ownResource(id) {
 			return id === `custom:${providerId}`
 		},
@@ -105,4 +117,12 @@ export const createCustomProvider = (
 			}
 		},
 	}
+
+	if (hasRefreshResource) {
+		provider.refreshResource = async ({ type, ...props }) => {
+			return await getProvider(type).refreshResource?.(props)
+		}
+	}
+
+	return provider
 }

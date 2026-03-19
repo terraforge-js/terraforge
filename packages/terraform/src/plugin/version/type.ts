@@ -1,12 +1,12 @@
-import type { Property } from '../schema.ts'
+import type { Property, RootProperty } from '../schema.ts'
 
 export type State = Record<string, unknown>
 
 export type Plugin = Readonly<{
 	schema: () => {
 		provider: Property
-		resources: Record<string, Property>
-		dataSources: Record<string, Property>
+		resources: Record<string, RootProperty>
+		dataSources: Record<string, RootProperty>
 	}
 	stop: () => Promise<void>
 	configure: (config: State) => Promise<void>

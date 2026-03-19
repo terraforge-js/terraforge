@@ -1,5 +1,11 @@
 //#region src/plugin/schema.d.ts
 
+type RootProperty = {
+  type: 'object';
+  version?: number;
+  description?: string;
+  properties: Record<string, Property>;
+};
 type Property = {
   description?: string;
   required?: boolean;
@@ -13,6 +19,7 @@ type Property = {
 } | {
   type: 'array' | 'record';
   item: Property;
+  collectionKind?: 'list' | 'set';
 } | {
   type: 'object' | 'array-object';
   properties: Record<string, Property>;
@@ -28,8 +35,8 @@ type State$1 = Record<string, unknown>;
 type Plugin = Readonly<{
   schema: () => {
     provider: Property;
-    resources: Record<string, Property>;
-    dataSources: Record<string, Property>;
+    resources: Record<string, RootProperty>;
+    dataSources: Record<string, RootProperty>;
   };
   stop: () => Promise<void>;
   configure: (config: State$1) => Promise<void>;
@@ -191,6 +198,21 @@ type GetDataProps<T = State> = {
   type: string;
   state: T;
 };
+type RefreshResourceProps<T = State> = {
+  type: string;
+  priorInputState: T;
+  priorOutputState: T;
+};
+type RefreshResourceResult<T = State> = {
+  kind: 'unchanged';
+  state: T;
+} | {
+  kind: 'updated';
+  state: T;
+  inputState: T;
+} | {
+  kind: 'deleted';
+};
 interface Provider {
   ownResource(id: string): boolean;
   getResource(props: GetProps): Promise<{
@@ -214,6 +236,7 @@ interface Provider {
   getData?(props: GetDataProps): Promise<{
     state: State;
   }>;
+  refreshResource?(props: RefreshResourceProps): Promise<RefreshResourceResult | undefined>;
   destroy?(): Promise<void>;
 }
 //#endregion
@@ -283,6 +306,23 @@ declare class TerraformProvider implements Provider {
     state
   }: GetDataProps): Promise<{
     state: State$1;
+  }>;
+  refreshResource({
+    type,
+    priorInputState,
+    priorOutputState
+  }: RefreshResourceProps): Promise<{
+    kind: "deleted";
+    state?: undefined;
+    inputState?: undefined;
+  } | {
+    kind: "unchanged";
+    state: State$1;
+    inputState?: undefined;
+  } | {
+    kind: "updated";
+    state: State$1;
+    inputState: State;
   }>;
 }
 //#endregion
