@@ -1,5 +1,6 @@
 {
 	"name": "@terraforge/cloudflare",
+	"description": "The CloudFlare resource provider for Terraforge lets you use CloudFlare resources in your cloud programs.",
 	"version": "5.17.0",
 	"provider": {
 		"org": "cloudflare",
