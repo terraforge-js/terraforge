@@ -2225,7 +2225,7 @@ const parseType = (type) => {
 //#endregion
 //#region src/plugin/version/5.ts
 const createPlugin5 = async ({ server, client }) => {
-	const schema = await client.call("GetSchema");
+	const schema = await client.call("GetSchema", {});
 	const provider = parseProviderSchema(schema.provider);
 	const resources = parseResourceSchema(schema.resourceSchemas);
 	const dataSources = parseResourceSchema(schema.dataSourceSchemas);
@@ -2301,7 +2301,7 @@ const createPlugin5 = async ({ server, client }) => {
 //#endregion
 //#region src/plugin/version/6.ts
 const createPlugin6 = async ({ server, client }) => {
-	const schema = await client.call("GetProviderSchema");
+	const schema = await client.call("GetProviderSchema", {});
 	const provider = parseProviderSchema(schema.provider);
 	const resources = parseResourceSchema(schema.resourceSchemas);
 	const dataSources = parseResourceSchema(schema.dataSourceSchemas);
