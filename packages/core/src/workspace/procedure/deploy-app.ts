@@ -32,6 +32,8 @@ const debug = createDebugger('Deploy App')
 export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
 	debug(app.name, 'start')
 
+	const stackNameByNodeUrn = new Map<URN, string>()
+
 	// -------------------------------------------------------
 	// Add a deploy log
 
@@ -118,6 +120,7 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	for (const stackState of Object.values(appState.stacks)) {
 		for (const [urn, nodeState] of entries(stackState.nodes)) {
 			allNodes[urn] = nodeState
+			stackNameByNodeUrn.set(urn, stackState.name)
 		}
 	}
 
@@ -150,7 +153,9 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 			return stack.urn === urn
 		})
 
-		if (!found) {
+		const isFilteredIn = !opt.filters?.length || opt.filters.includes(stackState.name)
+
+		if (!found && isFilteredIn) {
 			for (const [urn, nodeState] of entries(stackState.nodes)) {
 				graph.add(urn, dependentsOn(allNodes, urn), async () => {
 					if (nodeState.tag === 'resource') {
@@ -581,6 +586,11 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 	if (errors.length === 0 && appState.pendingDeletes) {
 		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+			const stackName = stackNameByNodeUrn.get(urn)
+			if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) {
+				continue
+			}
+
 			try {
 				await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
 				delete appState.pendingDeletes[urn]

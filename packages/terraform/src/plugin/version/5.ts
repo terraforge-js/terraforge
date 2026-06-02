@@ -19,7 +19,7 @@ export const createPlugin5 = async ({
 	server: PluginServer
 	client: PluginClient
 }): Promise<Plugin> => {
-	const schema = await client.call('GetSchema')
+	const schema = await client.call('GetSchema', {})
 	const provider = parseProviderSchema(schema.provider)
 	const resources = parseResourceSchema(schema.resourceSchemas)
 	const dataSources = parseResourceSchema(schema.dataSourceSchemas)

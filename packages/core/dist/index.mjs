@@ -605,6 +605,7 @@ const deleteResource = async (appToken, urn, state, opt) => {
 //#endregion
 //#region src/workspace/procedure/delete-app.ts
 const deleteApp = async (app, opt) => {
+	const stackNameByNodeUrn = /* @__PURE__ */ new Map();
 	await opt.backend.activityLog?.log(app.urn, {
 		action: "delete",
 		filters: opt.filters
@@ -621,19 +622,26 @@ const deleteApp = async (app, opt) => {
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10);
 	const graph = new DependencyGraph();
 	const allNodes = {};
-	for (const stackState of Object.values(appState.stacks)) for (const [urn, nodeState] of entries(stackState.nodes)) allNodes[urn] = nodeState;
+	for (const stackState of Object.values(appState.stacks)) for (const [urn, nodeState] of entries(stackState.nodes)) {
+		allNodes[urn] = nodeState;
+		stackNameByNodeUrn.set(urn, stackState.name);
+	}
 	for (const stackState of stackStates) for (const [urn, state] of entries(stackState.nodes)) graph.add(urn, dependentsOn(allNodes, urn), async () => {
 		if (state.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn, state, opt));
 		delete stackState.nodes[urn];
 	});
 	const errors = await graph.run();
 	if (errors.length === 0 && appState.pendingDeletes) {
-		for (const [urn, nodeState] of entries(appState.pendingDeletes)) try {
-			await deleteResource(appState.idempotentToken, urn, nodeState, opt);
-			delete appState.pendingDeletes[urn];
-		} catch (error) {
-			if (error instanceof Error) errors.push(error);
-			else errors.push(/* @__PURE__ */ new Error(`${error}`));
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+			const stackName = stackNameByNodeUrn.get(urn);
+			if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) continue;
+			try {
+				await deleteResource(appState.idempotentToken, urn, nodeState, opt);
+				delete appState.pendingDeletes[urn];
+			} catch (error) {
+				if (error instanceof Error) errors.push(error);
+				else errors.push(/* @__PURE__ */ new Error(`${error}`));
+			}
 		}
 		if (Object.keys(appState.pendingDeletes).length === 0) delete appState.pendingDeletes;
 	}
@@ -867,6 +875,7 @@ const updateResource = async (resource, appToken, priorInputState, priorOutputSt
 const debug$1 = createDebugger("Deploy App");
 const deployApp = async (app, opt) => {
 	debug$1(app.name, "start");
+	const stackNameByNodeUrn = /* @__PURE__ */ new Map();
 	await opt.backend.activityLog?.log(app.urn, {
 		action: "deploy",
 		filters: opt.filters
@@ -903,7 +912,10 @@ const deployApp = async (app, opt) => {
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10);
 	const graph = new DependencyGraph();
 	const allNodes = {};
-	for (const stackState of Object.values(appState.stacks)) for (const [urn, nodeState] of entries(stackState.nodes)) allNodes[urn] = nodeState;
+	for (const stackState of Object.values(appState.stacks)) for (const [urn, nodeState] of entries(stackState.nodes)) {
+		allNodes[urn] = nodeState;
+		stackNameByNodeUrn.set(urn, stackState.name);
+	}
 	for (const stack of filteredOutStacks) {
 		const stackState = appState.stacks[stack.urn];
 		if (stackState) for (const node of stack.nodes) {
@@ -915,12 +927,16 @@ const deployApp = async (app, opt) => {
 			});
 		}
 	}
-	for (const [urn, stackState] of entries(appState.stacks)) if (!app.stacks.find((stack) => {
-		return stack.urn === urn;
-	})) for (const [urn$1, nodeState] of entries(stackState.nodes)) graph.add(urn$1, dependentsOn(allNodes, urn$1), async () => {
-		if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn$1, nodeState, opt));
-		delete stackState.nodes[urn$1];
-	});
+	for (const [urn, stackState] of entries(appState.stacks)) {
+		const found = app.stacks.find((stack) => {
+			return stack.urn === urn;
+		});
+		const isFilteredIn = !opt.filters?.length || opt.filters.includes(stackState.name);
+		if (!found && isFilteredIn) for (const [urn$1, nodeState] of entries(stackState.nodes)) graph.add(urn$1, dependentsOn(allNodes, urn$1), async () => {
+			if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn$1, nodeState, opt));
+			delete stackState.nodes[urn$1];
+		});
+	}
 	for (const stack of stacks) {
 		const stackState = stackStates.get(stack.urn);
 		for (const [urn, nodeState] of entries(stackState.nodes)) if (!stack.nodes.find((r) => getMeta(r).urn === urn)) graph.add(urn, dependentsOn(allNodes, urn), async () => {
@@ -1080,12 +1096,16 @@ const deployApp = async (app, opt) => {
 	}
 	const errors = await graph.run();
 	if (errors.length === 0 && appState.pendingDeletes) {
-		for (const [urn, nodeState] of entries(appState.pendingDeletes)) try {
-			await deleteResource(appState.idempotentToken, urn, nodeState, opt);
-			delete appState.pendingDeletes[urn];
-		} catch (error) {
-			if (error instanceof Error) errors.push(error);
-			else errors.push(/* @__PURE__ */ new Error(`${error}`));
+		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+			const stackName = stackNameByNodeUrn.get(urn);
+			if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) continue;
+			try {
+				await deleteResource(appState.idempotentToken, urn, nodeState, opt);
+				delete appState.pendingDeletes[urn];
+			} catch (error) {
+				if (error instanceof Error) errors.push(error);
+				else errors.push(/* @__PURE__ */ new Error(`${error}`));
+			}
 		}
 		if (Object.keys(appState.pendingDeletes).length === 0) delete appState.pendingDeletes;
 	}

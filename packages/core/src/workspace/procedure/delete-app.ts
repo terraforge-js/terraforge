@@ -10,6 +10,8 @@ import { ProcedureOptions, WorkSpaceOptions } from '../workspace.ts'
 import { deleteResource } from './delete-resource.ts'
 
 export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
+	const stackNameByNodeUrn = new Map<URN, string>()
+
 	// -------------------------------------------------------
 	// Add a deploy log
 
@@ -62,6 +64,7 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 	for (const stackState of Object.values(appState.stacks)) {
 		for (const [urn, nodeState] of entries(stackState.nodes)) {
 			allNodes[urn] = nodeState
+			stackNameByNodeUrn.set(urn, stackState.name)
 		}
 	}
 
@@ -92,6 +95,11 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 	if (errors.length === 0 && appState.pendingDeletes) {
 		for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+			const stackName = stackNameByNodeUrn.get(urn)
+			if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) {
+				continue
+			}
+
 			try {
 				await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
 				delete appState.pendingDeletes[urn]
