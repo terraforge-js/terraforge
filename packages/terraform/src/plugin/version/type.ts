@@ -21,11 +21,16 @@ export type Plugin = Readonly<{
 	) => Promise<{
 		requiresReplace: Array<string | number>[]
 		plannedState: State
+		// The untouched DynamicValue from the provider. Decoding loses the
+		// "unknown" markers (msgpack ext 0), so apply must send this back
+		// verbatim instead of re-encoding the decoded planned state.
+		rawPlannedState?: unknown
 	}>
 	applyResourceChange: (
 		type: string,
 		priorState: State | null,
 		plannedState: State | null,
-		configState: State | null
+		configState: State | null,
+		rawPlannedState?: unknown
 	) => Promise<State>
 }>

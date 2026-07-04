@@ -6,11 +6,14 @@ export class MemoryStateBackend implements StateBackend {
 	protected states = new Map<URN, AppState>()
 
 	async get(urn: URN) {
-		return this.states.get(urn)
+		const state = this.states.get(urn)
+		return state ? structuredClone(state) : undefined
 	}
 
 	async update(urn: URN, state: AppState) {
-		this.states.set(urn, state)
+		// Store a snapshot — the file and S3 backends serialize to JSON, so
+		// callers' later mutations must not alias the persisted state.
+		this.states.set(urn, structuredClone(state))
 	}
 
 	async delete(urn: URN) {

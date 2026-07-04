@@ -1,7 +1,7 @@
 import { credentials, loadPackageDefinition } from '@grpc/grpc-js'
 import { fromJSON } from '@grpc/proto-loader'
 import { createDebugger } from '@terraforge/core'
-import { throwDiagnosticError } from './diagnostic.ts'
+import { hasErrorDiagnostic, throwDiagnosticError } from './diagnostic.ts'
 import tfplugin5 from './protocol/tfplugin5.ts'
 import tfplugin6 from './protocol/tfplugin6.ts'
 
@@ -75,10 +75,14 @@ export const createPluginClient = async (props: {
 					if (error) {
 						debug('failed', error)
 						reject(error)
-					} else if (response.diagnostics) {
+					} else if (hasErrorDiagnostic(response)) {
 						debug('failed', response.diagnostics)
 						reject(throwDiagnosticError(response))
 					} else {
+						if (response.diagnostics) {
+							debug('warning', response.diagnostics)
+						}
+
 						resolve(response)
 					}
 				})

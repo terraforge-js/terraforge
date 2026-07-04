@@ -4,10 +4,11 @@ import { pack, unpack } from "msgpackr";
 import { credentials, loadPackageDefinition } from "@grpc/grpc-js";
 import { fromJSON } from "@grpc/proto-loader";
 import jszip from "jszip";
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { arch, homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
-import { compare } from "semver";
+import "semver";
 import { spawn } from "node:child_process";
 
 //#region src/type-gen.ts
@@ -493,9 +494,10 @@ var TerraformProvider = class {
 	}
 	async destroy() {
 		if (this.plugin) {
-			(await this.plugin).stop();
+			const plugin = await this.plugin;
 			this.plugin = void 0;
 			this.configured = void 0;
+			await plugin.stop();
 		}
 	}
 	ownResource(id) {
@@ -510,9 +512,11 @@ var TerraformProvider = class {
 		};
 	}
 	async createResource({ type, state }) {
+		const plugin = await this.configure();
+		const { plannedState, rawPlannedState } = await plugin.planResourceChange(type, null, state, state);
 		return {
 			version: 0,
-			state: await (await this.configure()).applyResourceChange(type, null, state, state)
+			state: await plugin.applyResourceChange(type, null, plannedState, state, rawPlannedState)
 		};
 	}
 	async updateResource({ type, priorState, proposedState }) {
@@ -521,14 +525,14 @@ var TerraformProvider = class {
 			...priorState,
 			...proposedState
 		};
-		const { requiresReplace, plannedState } = await plugin.planResourceChange(type, priorState, mergedState, proposedState);
+		const { requiresReplace, plannedState, rawPlannedState } = await plugin.planResourceChange(type, priorState, mergedState, proposedState);
 		if (requiresReplace.length > 0) {
 			const formattedAttrs = requiresReplace.map((p) => p.join(".")).join("\", \"");
 			throw new Error(`Updating the "${formattedAttrs}" properties for the "${type}" resource will require the resource to be replaced.`);
 		}
 		return {
 			version: 0,
-			state: await plugin.applyResourceChange(type, priorState, plannedState, proposedState)
+			state: await plugin.applyResourceChange(type, priorState, plannedState, proposedState, rawPlannedState)
 		};
 	}
 	async deleteResource({ type, state }) {
@@ -536,9 +540,13 @@ var TerraformProvider = class {
 		try {
 			await plugin.applyResourceChange(type, state, null, null);
 		} catch (error) {
+			let newState;
 			try {
-				if (!await plugin.readResource(type, state)) throw new ResourceNotFound();
-			} catch (_) {}
+				newState = await plugin.readResource(type, state);
+			} catch (_) {
+				throw error;
+			}
+			if (!newState) throw new ResourceNotFound();
 			throw error;
 		}
 	}
@@ -593,12 +601,19 @@ const formatDiagnosticErrorMessage = (diagnostics) => {
 	if (diagnostic.detail) return `${diagnostic.summary}\n\n${diagnostic.detail}`;
 	return diagnostic.summary;
 };
+const hasErrorDiagnostic = (response) => {
+	return response.diagnostics?.some((item) => item.severity !== 2) ?? false;
+};
 const throwDiagnosticError = (response) => {
 	return new DiagnosticsError(response.diagnostics.map((item) => ({
-		severity: item.severity === 1 ? "error" : "warning",
+		severity: item.severity === 2 ? "warning" : "error",
 		summary: item.summary,
 		detail: item.detail,
-		path: item.attribute?.steps.map((step) => step.attributeName)
+		path: item.attribute?.steps.map((step) => {
+			if (step.attributeName !== void 0) return step.attributeName;
+			if (step.elementKeyString !== void 0) return step.elementKeyString;
+			return Number(step.elementKeyInt);
+		})
 	})));
 };
 
@@ -1918,10 +1933,13 @@ const createPluginClient = async (props) => {
 				if (error) {
 					debug$2("failed", error);
 					reject(error);
-				} else if (response.diagnostics) {
+				} else if (hasErrorDiagnostic(response)) {
 					debug$2("failed", response.diagnostics);
 					reject(throwDiagnosticError(response));
-				} else resolve(response);
+				} else {
+					if (response.diagnostics) debug$2("warning", response.diagnostics);
+					resolve(response);
+				}
 			});
 		});
 	} };
@@ -1930,21 +1948,6 @@ const createPluginClient = async (props) => {
 //#endregion
 //#region src/plugin/registry.ts
 const baseUrl = "https://registry.terraform.io/v1/providers";
-const getProviderVersions = async (org, type) => {
-	const versions = (await (await fetch(`${baseUrl}/${org}/${type}/versions`)).json()).versions;
-	const os = getOS();
-	const ar = getArchitecture();
-	const supported = versions.filter((v) => {
-		return !!v.platforms.find((p) => p.os === os && p.arch === ar);
-	});
-	const latest = supported.sort((a, b) => compare(a.version, b.version)).at(-1);
-	if (!latest) throw new Error("Version is unsupported for your platform.");
-	return {
-		versions,
-		supported,
-		latest: latest.version
-	};
-};
 const getProviderDownloadUrl = async (org, type, version) => {
 	const url = [
 		baseUrl,
@@ -1955,7 +1958,9 @@ const getProviderDownloadUrl = async (org, type, version) => {
 		getOS(),
 		getArchitecture()
 	].join("/");
-	const result = await (await fetch(url)).json();
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to fetch the provider download url for ${org}/${type}@${version}: ${response.status}`);
+	const result = await response.json();
 	return {
 		url: result.download_url,
 		shasum: result.shasum,
@@ -2011,21 +2016,25 @@ const deletePlugin = async (props) => {
 	} else debug$1(props.type, "not installed");
 };
 const downloadPlugin = async (props) => {
-	if (props.version === "latest") {
-		const { latest } = await getProviderVersions(props.org, props.type);
-		props.version = latest;
-	}
 	const file = getInstallPath(props);
 	if (!await isPluginInstalled(props)) {
 		debug$1(props.type, "downloading...");
 		const info = await getProviderDownloadUrl(props.org, props.type, props.version);
-		const buf = await (await fetch(info.url)).bytes();
+		const res = await fetch(info.url);
+		if (!res.ok) throw new Error(`Failed to download the provider: ${res.status}`);
+		const buf = await res.bytes();
+		if (info.shasum) {
+			const hash = createHash("sha256").update(buf).digest("hex");
+			if (hash !== info.shasum) throw new Error(`Provider download checksum mismatch: expected ${info.shasum}, got ${hash}`);
+		}
 		const zipped = (await jszip.loadAsync(buf)).filter((file$1) => file$1.startsWith("terraform-provider")).at(0);
 		if (!zipped) throw new Error(`Can't find the provider inside the downloaded zip file.`);
 		const binary = await zipped.async("nodebuffer");
 		debug$1(props.type, "done");
 		await mkdir(dirname(file), { recursive: true });
-		await writeFile(file, binary, { mode: 509 });
+		const temp = `${file}.tmp`;
+		await writeFile(temp, binary, { mode: 509 });
+		await rename(temp, file);
 	} else debug$1(props.type, "already downloaded");
 	return {
 		file,
@@ -2040,38 +2049,59 @@ const createPluginServer = (props) => {
 	return new Promise((resolve, reject) => {
 		debug("init");
 		const process = spawn(`${props.file}`, ["-debug"]);
-		process.stderr.on("data", (data) => {
-			if (props.debug) {
-				const message = data.toString("utf8");
-				console.log(message);
+		let output = "";
+		let settled = false;
+		const fail = (error) => {
+			if (!settled) {
+				settled = true;
+				clearTimeout(timeout);
+				process.kill();
+				debug("failed");
+				reject(error);
 			}
+		};
+		const timeout = setTimeout(() => {
+			fail(/* @__PURE__ */ new Error("Timed out waiting for the plugin to start"));
+		}, 1e4);
+		process.on("error", fail);
+		process.on("exit", (code, signal) => {
+			if (!settled) {
+				fail(/* @__PURE__ */ new Error(`The plugin exited before it was ready (code ${code})`));
+				return;
+			}
+			debug("exited", code, signal);
 		});
-		process.stdout.once("data", (data) => {
+		process.stderr.on("data", (data) => {
+			const message = data.toString("utf8");
+			debug("stderr", message);
+			if (props.debug) console.log(message);
+		});
+		process.stdout.on("data", (data) => {
+			if (settled) return;
+			output += data.toString("utf8");
+			const matches = output.match(/TF_REATTACH_PROVIDERS='(.*)'/);
+			if (!matches) return;
 			try {
-				const matches = data.toString("utf8").match(/TF_REATTACH_PROVIDERS\=\'(.*)\'/);
-				if (matches && matches.length > 0) {
-					const json = matches[0].slice(23, -1);
-					const data$1 = JSON.parse(json);
-					const entries = Object.values(data$1);
-					if (entries.length > 0) {
-						const entry = entries[0];
-						const version = entry.ProtocolVersion;
-						const endpoint = entry.Addr.String;
-						debug("started", endpoint);
-						resolve({
-							kill() {
-								process.kill();
-							},
-							protocol: "tfplugin" + version.toFixed(1),
-							version,
-							endpoint
-						});
-						return;
-					}
+				const entries = Object.values(JSON.parse(matches[1]));
+				if (entries.length > 0) {
+					const entry = entries[0];
+					const version = entry.ProtocolVersion;
+					const endpoint = entry.Addr.String;
+					settled = true;
+					clearTimeout(timeout);
+					debug("started", endpoint);
+					resolve({
+						kill() {
+							process.kill();
+						},
+						protocol: "tfplugin" + version.toFixed(1),
+						version,
+						endpoint
+					});
+					return;
 				}
 			} catch (error) {}
-			debug("failed");
-			reject(/* @__PURE__ */ new Error("Failed to start the plugin"));
+			fail(/* @__PURE__ */ new Error("Failed to start the plugin"));
 		});
 	});
 };
@@ -2170,10 +2200,25 @@ const parseAttribute = (attr) => {
 			...parseAttributeType(json)
 		};
 	}
-	if (attr.nestedType) return {
-		...prop,
-		...parseBlock(attr.nestedType)
-	};
+	if (attr.nestedType) {
+		const block = parseBlock(attr.nestedType);
+		const nesting = attr.nestedType.nesting;
+		if (nesting === NestingMode.LIST || nesting === NestingMode.SET) return {
+			...prop,
+			type: "array",
+			item: block,
+			collectionKind: nesting === NestingMode.SET ? "set" : "list"
+		};
+		if (nesting === NestingMode.MAP) return {
+			...prop,
+			type: "record",
+			item: block
+		};
+		return {
+			...prop,
+			...block
+		};
+	}
 	throw new Error("Empty attr");
 };
 const parseAttributeType = (item) => {
@@ -2238,8 +2283,11 @@ const createPlugin5 = async ({ server, client }) => {
 			};
 		},
 		async stop() {
-			await client.call("Stop");
-			server.kill();
+			try {
+				await client.call("Stop");
+			} finally {
+				server.kill();
+			}
 		},
 		async configure(config) {
 			const prepared = await client.call("PrepareProviderConfig", { config: encodeDynamicValue(formatInputState(provider, config)) });
@@ -2280,10 +2328,11 @@ const createPlugin5 = async ({ server, client }) => {
 			const plannedState = formatOutputState(schema$1, decodeDynamicValue(plan.plannedState));
 			return {
 				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
-				plannedState
+				plannedState,
+				rawPlannedState: plan.plannedState
 			};
 		},
-		async applyResourceChange(type, priorState, plannedState, configState) {
+		async applyResourceChange(type, priorState, plannedState, configState, rawPlannedState) {
 			const schema$1 = getResourceSchema(resources, type);
 			const preparedPriorState = formatInputState(schema$1, priorState);
 			const preparedPlannedState = formatInputState(schema$1, plannedState);
@@ -2291,7 +2340,7 @@ const createPlugin5 = async ({ server, client }) => {
 			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ApplyResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
-				plannedState: encodeDynamicValue(preparedPlannedState),
+				plannedState: rawPlannedState ?? encodeDynamicValue(preparedPlannedState),
 				config: encodeDynamicValue(preparedConfigState)
 			})).newState));
 		}
@@ -2314,12 +2363,16 @@ const createPlugin6 = async ({ server, client }) => {
 			};
 		},
 		async stop() {
-			await client.call("StopProvider");
-			server.kill();
+			try {
+				await client.call("StopProvider");
+			} finally {
+				server.kill();
+			}
 		},
 		async configure(config) {
-			const prepared = await client.call("ValidateProviderConfig", { config: encodeDynamicValue(formatInputState(provider, config)) });
-			await client.call("ConfigureProvider", { config: prepared.preparedConfig });
+			const encoded = encodeDynamicValue(formatInputState(provider, config));
+			await client.call("ValidateProviderConfig", { config: encoded });
+			await client.call("ConfigureProvider", { config: encoded });
 		},
 		async readResource(type, state) {
 			const schema$1 = getResourceSchema(resources, type);
@@ -2342,24 +2395,25 @@ const createPlugin6 = async ({ server, client }) => {
 				config: encodeDynamicValue(formatInputState(schema$1, state))
 			});
 		},
-		async planResourceChange(type, priorState, proposedState) {
+		async planResourceChange(type, priorState, proposedState, configState) {
 			const schema$1 = getResourceSchema(resources, type);
 			const preparedPriorState = formatInputState(schema$1, priorState);
 			const preparedProposedState = formatInputState(schema$1, proposedState);
-			const configState = formatInputState(schema$1, proposedState);
+			const preparedConfigState = formatInputState(schema$1, configState);
 			const plan = await client.call("PlanResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(configState)
+				config: encodeDynamicValue(preparedConfigState)
 			});
 			const plannedState = formatOutputState(schema$1, decodeDynamicValue(plan.plannedState));
 			return {
 				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
-				plannedState
+				plannedState,
+				rawPlannedState: plan.plannedState
 			};
 		},
-		async applyResourceChange(type, priorState, plannedState, configState) {
+		async applyResourceChange(type, priorState, plannedState, configState, rawPlannedState) {
 			const schema$1 = getResourceSchema(resources, type);
 			const preparedPriorState = formatInputState(schema$1, priorState);
 			const preparedPlannedState = formatInputState(schema$1, plannedState);
@@ -2367,7 +2421,7 @@ const createPlugin6 = async ({ server, client }) => {
 			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ApplyResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
-				plannedState: encodeDynamicValue(preparedPlannedState),
+				plannedState: rawPlannedState ?? encodeDynamicValue(preparedPlannedState),
 				config: encodeDynamicValue(preparedConfigState)
 			})).newState));
 		}
@@ -2383,29 +2437,34 @@ const createLazyPlugin = (props) => {
 			file,
 			debug: false
 		}));
-		const client = await retry(3, () => createPluginClient(server));
-		const plugin = await {
-			5: () => createPlugin5({
-				server,
-				client
-			}),
-			6: () => createPlugin6({
-				server,
-				client
-			})
-		}[server.version]?.();
-		if (!plugin) throw new Error(`No plugin client available for protocol version ${server.version}`);
-		return plugin;
+		try {
+			const client = await retry(3, () => createPluginClient(server));
+			const plugin = await {
+				5: () => createPlugin5({
+					server,
+					client
+				}),
+				6: () => createPlugin6({
+					server,
+					client
+				})
+			}[server.version]?.();
+			if (!plugin) throw new Error(`No plugin client available for protocol version ${server.version}`);
+			return plugin;
+		} catch (error) {
+			server.kill();
+			throw error;
+		}
 	};
 };
 const retry = async (tries, cb) => {
 	let latestError;
-	while (--tries) try {
+	while (tries--) try {
 		return await cb();
 	} catch (error) {
 		latestError = error;
 	}
-	throw latestError;
+	throw latestError ?? /* @__PURE__ */ new Error("No retry attempts were made.");
 };
 
 //#endregion

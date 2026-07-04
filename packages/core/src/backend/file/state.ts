@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createDebugger } from '../../debug.ts'
 import { URN } from '../../urn.ts'
@@ -30,9 +30,16 @@ export class FileStateBackend implements StateBackend {
 		let json
 
 		try {
-			json = await readFile(join(this.stateFile(urn)), 'utf8')
+			json = await readFile(this.stateFile(urn), 'utf8')
 		} catch (error) {
-			return
+			// Only a missing file means "no state". Any other error must fail
+			// loudly — treating it as undeployed would recreate every resource
+			// and overwrite the real state file.
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				return
+			}
+
+			throw error
 		}
 
 		return JSON.parse(json) as AppState
@@ -41,7 +48,14 @@ export class FileStateBackend implements StateBackend {
 	async update(urn: URN, state: AppState) {
 		debug('update')
 		await this.mkdir()
-		await writeFile(this.stateFile(urn), JSON.stringify(state, undefined, 2))
+
+		// Write to a temp file and rename it into place so a crash mid-write
+		// can't leave a truncated state file behind.
+		const file = this.stateFile(urn)
+		const temp = `${file}.tmp`
+
+		await writeFile(temp, JSON.stringify(state, undefined, 2))
+		await rename(temp, file)
 	}
 
 	async delete(urn: URN) {

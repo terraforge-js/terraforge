@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, stat } from 'node:fs/promises'
+import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { URN } from '../../urn.ts'
 import { ActivityLogBackend, Log, LogProps } from '../activity-log.ts'
@@ -33,15 +33,23 @@ export class FileActivityLogBackend implements ActivityLogBackend {
 	}
 
 	async tail(urn: URN, limit = 10) {
-		const file = this.logFile(urn)
-		const stats = await stat(file)
+		let content
 
-		if (!stats.isFile()) {
-			return []
+		try {
+			content = await readFile(this.logFile(urn), 'utf8')
+		} catch (error) {
+			// No log file means no activity yet.
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				return []
+			}
+
+			throw error
 		}
 
-		const content = await readFile(file, 'utf8')
 		const lines = content.split('\n').filter(Boolean)
-		return lines.slice(-limit).map(line => JSON.parse(line) as Log)
+		return lines
+			.slice(-limit)
+			.map(line => JSON.parse(line) as Log)
+			.reverse()
 	}
 }

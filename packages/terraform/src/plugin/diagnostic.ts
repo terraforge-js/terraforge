@@ -9,8 +9,9 @@ type AttributePath = {
 	steps: Step[]
 }
 
+// A proto oneof — exactly one of the fields is set.
 type Step = {
-	attributeName: string
+	attributeName?: string
 	elementKeyString?: string
 	elementKeyInt?: number
 }
@@ -46,12 +47,28 @@ const formatDiagnosticErrorMessage = (diagnostics: DiagnosticEntry[]): string =>
 	return diagnostic.summary
 }
 
+// Severity: 0 = invalid, 1 = error, 2 = warning. Anything that isn't
+// explicitly a warning is treated as an error.
+export const hasErrorDiagnostic = (response: Response) => {
+	return response.diagnostics?.some(item => item.severity !== 2) ?? false
+}
+
 export const throwDiagnosticError = (response: Response) => {
 	const diagnostics: DiagnosticEntry[] = response.diagnostics.map(item => ({
-		severity: item.severity === 1 ? 'error' : 'warning',
+		severity: item.severity === 2 ? 'warning' : 'error',
 		summary: item.summary,
 		detail: item.detail,
-		path: item.attribute?.steps.map(step => step.attributeName),
+		path: item.attribute?.steps.map(step => {
+			if (step.attributeName !== undefined) {
+				return step.attributeName
+			}
+
+			if (step.elementKeyString !== undefined) {
+				return step.elementKeyString
+			}
+
+			return Number(step.elementKeyInt)
+		}),
 	}))
 
 	return new DiagnosticsError(diagnostics)

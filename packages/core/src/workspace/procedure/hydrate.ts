@@ -1,9 +1,10 @@
 import { App } from '../../app.ts'
 import { getMeta } from '../../node.ts'
+import { getMigratedAppState } from '../state/migrate.ts'
 import { WorkSpaceOptions } from '../workspace.ts'
 
 export const hydrate = async (app: App, opt: WorkSpaceOptions) => {
-	const appState = await opt.backend.state.get(app.urn)
+	const appState = await getMigratedAppState(opt.backend.state, app.urn)
 
 	if (appState) {
 		for (const stack of app.stacks) {

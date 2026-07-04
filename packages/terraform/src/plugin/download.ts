@@ -1,9 +1,10 @@
 import { createDebugger } from '@terraforge/core'
 import jszip from 'jszip'
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { getProviderDownloadUrl, getProviderVersions, type Version } from './registry.ts'
+import { getProviderDownloadUrl, type Version } from './registry.ts'
 
 const exists = async (file: string) => {
 	try {
@@ -51,11 +52,6 @@ export const deletePlugin = async (props: DownloadPluginProps) => {
 }
 
 export const downloadPlugin = async (props: DownloadPluginProps) => {
-	if (props.version === 'latest') {
-		const { latest } = await getProviderVersions(props.org, props.type)
-		props.version = latest
-	}
-
 	const file = getInstallPath(props)
 	const isAlreadyInstalled = await isPluginInstalled(props)
 
@@ -63,7 +59,21 @@ export const downloadPlugin = async (props: DownloadPluginProps) => {
 		debug(props.type, 'downloading...')
 		const info = await getProviderDownloadUrl(props.org, props.type, props.version)
 		const res = await fetch(info.url)
+
+		if (!res.ok) {
+			throw new Error(`Failed to download the provider: ${res.status}`)
+		}
+
 		const buf = await res.bytes()
+
+		// Verify the registry checksum before installing anything.
+		if (info.shasum) {
+			const hash = createHash('sha256').update(buf).digest('hex')
+
+			if (hash !== info.shasum) {
+				throw new Error(`Provider download checksum mismatch: expected ${info.shasum}, got ${hash}`)
+			}
+		}
 
 		const zip = await jszip.loadAsync(buf)
 		const zipped = zip.filter(file => file.startsWith('terraform-provider')).at(0)
@@ -77,9 +87,15 @@ export const downloadPlugin = async (props: DownloadPluginProps) => {
 		debug(props.type, 'done')
 
 		await mkdir(dirname(file), { recursive: true })
-		await writeFile(file, binary, {
+
+		// Write to a temp file and rename it into place so an interrupted
+		// install can't leave a truncated binary at the final path.
+		const temp = `${file}.tmp`
+
+		await writeFile(temp, binary, {
 			mode: 0o775,
 		})
+		await rename(temp, file)
 	} else {
 		debug(props.type, 'already downloaded')
 	}

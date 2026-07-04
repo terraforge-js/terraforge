@@ -1,6 +1,6 @@
 import { UUID } from 'node:crypto'
 import { App } from '../app.ts'
-import { LockBackend } from '../backend/lock.ts'
+import { AlreadyLockedError, LockBackend } from '../backend/lock.ts'
 import { StateBackend } from '../backend/state.ts'
 // import { findInputDeps } from '../input.ts'
 import { ActivityLogBackend } from '../backend/activity-log.ts'
@@ -74,7 +74,13 @@ export class WorkSpace {
 		try {
 			releaseLock = await this.props.backend.lock.lock(app.urn)
 		} catch (error) {
-			throw new Error(`Already in progress: ${app.urn}`)
+			if (error instanceof AlreadyLockedError) {
+				throw new Error(`Already in progress: ${app.urn}`)
+			}
+
+			// Infrastructure errors must surface as themselves — reporting
+			// them as a held lock invites a wrongful insecureReleaseLock.
+			throw error
 		}
 
 		// --------------------------------------------------
@@ -87,14 +93,23 @@ export class WorkSpace {
 		})
 
 		// --------------------------------------------------
+		// The lock must be released on every path, even when
+		// committing the operations fails.
+
+		const cleanup = async () => {
+			try {
+				await this.destroyProviders()
+			} finally {
+				await releaseLock()
+				releaseExit()
+			}
+		}
 
 		try {
 			const result = await refresh(app, { ...this.props, ...options })
 
 			if (!result) {
-				await this.destroyProviders()
-				await releaseLock()
-				releaseExit()
+				await cleanup()
 
 				return
 			}
@@ -102,16 +117,19 @@ export class WorkSpace {
 			return {
 				operations: result.operations,
 				commit: async () => {
-					await result.commit()
-					await this.destroyProviders()
-					await releaseLock()
-					releaseExit()
+					try {
+						await result.commit()
+					} finally {
+						await cleanup()
+					}
+				},
+				// Release the lock without applying the operations.
+				discard: async () => {
+					await cleanup()
 				},
 			}
 		} catch (error) {
-			await this.destroyProviders()
-			await releaseLock()
-			releaseExit()
+			await cleanup()
 
 			throw error
 		}

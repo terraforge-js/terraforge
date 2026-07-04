@@ -139,6 +139,20 @@ export const findDependencyPaths = (value: unknown, dependencyUrn: URN, path: Ar
 	return paths
 }
 
+export const getAtPath = (value: unknown, path: Array<string | number>) => {
+	let current: any = value
+
+	for (const key of path) {
+		if (current == null) {
+			return undefined
+		}
+
+		current = current[key]
+	}
+
+	return current
+}
+
 const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 const removeAtPath = (target: any, path: Array<string | number>) => {

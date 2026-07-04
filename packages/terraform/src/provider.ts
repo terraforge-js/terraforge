@@ -48,10 +48,11 @@ export class TerraformProvider implements Provider {
 	async destroy(): Promise<void> {
 		if (this.plugin) {
 			const plugin = await this.plugin
-			plugin.stop()
 
 			this.plugin = undefined
 			this.configured = undefined
+
+			await plugin.stop()
 		}
 	}
 
@@ -75,7 +76,11 @@ export class TerraformProvider implements Provider {
 
 	async createResource({ type, state }: CreateProps) {
 		const plugin = await this.configure()
-		const newState = await plugin.applyResourceChange(type, null, state, state)
+
+		// Apply must receive the provider's own planned state — that's
+		// where defaults, plan modifiers and unknown markers come from.
+		const { plannedState, rawPlannedState } = await plugin.planResourceChange(type, null, state, state)
+		const newState = await plugin.applyResourceChange(type, null, plannedState, state, rawPlannedState)
 
 		return {
 			version: 0,
@@ -86,7 +91,7 @@ export class TerraformProvider implements Provider {
 	async updateResource({ type, priorState, proposedState }: UpdateProps) {
 		const plugin = await this.configure()
 		const mergedState = { ...priorState, ...proposedState }
-		const { requiresReplace, plannedState } = await plugin.planResourceChange(
+		const { requiresReplace, plannedState, rawPlannedState } = await plugin.planResourceChange(
 			type,
 			priorState,
 			mergedState,
@@ -101,7 +106,13 @@ export class TerraformProvider implements Provider {
 			)
 		}
 
-		const newState = await plugin.applyResourceChange(type, priorState, plannedState, proposedState)
+		const newState = await plugin.applyResourceChange(
+			type,
+			priorState,
+			plannedState,
+			proposedState,
+			rawPlannedState
+		)
 
 		return {
 			version: 0,
@@ -120,13 +131,18 @@ export class TerraformProvider implements Provider {
 			// So we need to check if the resource exists with every
 			// error and throw our own custom ResourceNotFound error.
 
-			try {
-				const newState = await plugin.readResource(type, state)
+			let newState
 
-				if (!newState) {
-					throw new ResourceNotFound()
-				}
-			} catch (_) {}
+			try {
+				newState = await plugin.readResource(type, state)
+			} catch (_) {
+				// The existence probe itself failed — report the original error.
+				throw error
+			}
+
+			if (!newState) {
+				throw new ResourceNotFound()
+			}
 
 			throw error
 		}

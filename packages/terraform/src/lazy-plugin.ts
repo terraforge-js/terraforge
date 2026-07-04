@@ -10,26 +10,33 @@ export const createLazyPlugin = (props: DownloadPluginProps & { location?: strin
 		const { file } = await downloadPlugin(props)
 
 		const server = await retry(3, () => createPluginServer({ file, debug: false }))
-		const client = await retry(3, () => createPluginClient(server))
-		const plugins: Record<number, () => Promise<Plugin>> = {
-			5: () => createPlugin5({ server, client }),
-			6: () => createPlugin6({ server, client }),
+
+		try {
+			const client = await retry(3, () => createPluginClient(server))
+			const plugins: Record<number, () => Promise<Plugin>> = {
+				5: () => createPlugin5({ server, client }),
+				6: () => createPlugin6({ server, client }),
+			}
+
+			const plugin = await plugins[server.version]?.()
+
+			if (!plugin) {
+				throw new Error(`No plugin client available for protocol version ${server.version}`)
+			}
+
+			return plugin
+		} catch (error) {
+			// The plugin process is already running — don't leak it.
+			server.kill()
+			throw error
 		}
-
-		const plugin = await plugins[server.version]?.()
-
-		if (!plugin) {
-			throw new Error(`No plugin client available for protocol version ${server.version}`)
-		}
-
-		return plugin
 	}
 }
 
-const retry = async <T>(tries: number, cb: () => Promise<T>): Promise<T> => {
+export const retry = async <T>(tries: number, cb: () => Promise<T>): Promise<T> => {
 	let latestError: unknown
 
-	while (--tries) {
+	while (tries--) {
 		try {
 			const result = await cb()
 			return result
@@ -38,5 +45,5 @@ const retry = async <T>(tries: number, cb: () => Promise<T>): Promise<T> => {
 		}
 	}
 
-	throw latestError
+	throw latestError ?? new Error('No retry attempts were made.')
 }

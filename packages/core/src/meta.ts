@@ -65,6 +65,7 @@ export const createMeta = <T extends Tag = Tag, C extends Config = Config>(
 	const stack = findParentStack(parent)
 
 	let output: State | undefined
+	let resolved = false
 
 	return {
 		tag,
@@ -112,15 +113,24 @@ export const createMeta = <T extends Tag = Tag, C extends Config = Config>(
 		// },
 		resolve(data) {
 			output = data
+			resolved = true
 		},
 		output<V>(cb: (data: State) => V) {
-			return new Output<V>(new Set([this as Meta]), resolve => {
-				if (!output) {
-					throw new Error(`Unresolved output for ${tag}: ${urn}`)
-				}
+			return new Output<V>(
+				new Set([this as Meta]),
+				(resolve, reject) => {
+					if (!resolved) {
+						reject(new Error(`Unresolved output for ${tag}: ${urn}`))
+						return
+					}
 
-				resolve(cb(output))
-			})
+					resolve(cb(output as State))
+				},
+				// Volatile: always read the meta's current output, so a temporary
+				// resolve (or an await before deploy) can't settle the output with
+				// a stale value forever.
+				true
+			)
 		},
 	}
 }

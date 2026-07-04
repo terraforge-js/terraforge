@@ -67,7 +67,9 @@ export const createResource = async (
 		version: result.version,
 		type: meta.type,
 		provider: meta.provider,
-		input: meta.input,
+		// Store the resolved input — meta.input contains live Output
+		// instances that must never be serialized into state.
+		input,
 		output: result.state,
 	}
 }

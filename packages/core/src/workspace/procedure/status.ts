@@ -4,6 +4,7 @@ import { getMeta, isResource } from '../../node.ts'
 import { Output } from '../../output.ts'
 import { URN } from '../../urn.ts'
 import { compareState, NodeState } from '../state.ts'
+import { getMigratedAppState } from '../state/migrate.ts'
 import { WorkSpaceOptions } from '../workspace.ts'
 
 /**
@@ -97,7 +98,7 @@ const filterStateToMatchConfig = (state: unknown, config: unknown): unknown => {
 }
 
 export const status = async (app: App, opt: WorkSpaceOptions): Promise<StackStatusInfo[]> => {
-	const appState = await opt.backend.state.get(app.urn)
+	const appState = await getMigratedAppState(opt.backend.state, app.urn)
 
 	const stacks: StackStatusInfo[] = []
 

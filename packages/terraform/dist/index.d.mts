@@ -46,13 +46,15 @@ type Plugin = Readonly<{
   planResourceChange: (type: string, priorState: State$1 | null, proposedNewState: State$1 | null, configState: State$1 | null) => Promise<{
     requiresReplace: Array<string | number>[];
     plannedState: State$1;
+    rawPlannedState?: unknown;
   }>;
-  applyResourceChange: (type: string, priorState: State$1 | null, plannedState: State$1 | null, configState: State$1 | null) => Promise<State$1>;
+  applyResourceChange: (type: string, priorState: State$1 | null, plannedState: State$1 | null, configState: State$1 | null, rawPlannedState?: unknown) => Promise<State$1>;
 }>;
 //#endregion
 //#region ../core/src/future.d.ts
 declare class Future<T = unknown> {
   protected callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void;
+  readonly volatile: boolean;
   protected listeners: Set<{
     resolve: (data: T) => void;
     reject?: (error: unknown) => void;
@@ -60,7 +62,7 @@ declare class Future<T = unknown> {
   protected status: 0 | 1 | 2 | 3;
   protected data?: T;
   protected error?: unknown;
-  constructor(callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void);
+  constructor(callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void, volatile?: boolean);
   get [Symbol.toStringTag](): string;
   pipe<N>(cb: (value: T) => N): Future<Awaited<N>>;
   then(resolve: (data: T) => void, reject?: (error: unknown) => void): void;
@@ -74,7 +76,7 @@ type UnwrapInput<T> = T extends Input<infer V> ? V : T;
 //#region ../core/src/output.d.ts
 declare class Output<T = unknown> extends Future<T> {
   readonly dependencies: Set<Meta>;
-  constructor(dependencies: Set<Meta>, callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void);
+  constructor(dependencies: Set<Meta>, callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void, volatile?: boolean);
   pipe<N>(cb: (value: T) => N): Output<Awaited<N>>;
 }
 declare const combine: <T extends Input[], R = UnwrapInputArray<T>>(...inputs: T) => Output<R>;
@@ -327,7 +329,7 @@ declare class TerraformProvider implements Provider {
 }
 //#endregion
 //#region src/plugin/registry.d.ts
-type Version = `${number}.${number}.${number}` | 'latest';
+type Version = `${number}.${number}.${number}`;
 //#endregion
 //#region src/proxy.d.ts
 type TerraformProviderConfig = {

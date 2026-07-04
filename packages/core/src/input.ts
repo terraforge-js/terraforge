@@ -51,77 +51,76 @@ export const findInputDeps = (props: unknown) => {
 	return deps
 }
 
-export const resolveInputs = async <T>(inputs: T): Promise<T> => {
-	const unresolved: [any, string | number][] = []
+const resolveWithTimeout = async (promise: Output | Future<unknown> | Promise<unknown>) => {
+	let timeout
+	try {
+		return await Promise.race([
+			promise,
+			new Promise((_, reject) => {
+				timeout = setTimeout(() => {
+					if (promise instanceof Output) {
+						reject(
+							new Error(
+								`Resolving Output<${[...promise.dependencies].map(d => d.urn).join(', ')}> took too long.`
+							)
+						)
+					} else if (promise instanceof Future) {
+						reject(new Error('Resolving Future took too long.'))
+					} else {
+						reject(new Error('Resolving Promise took too long.'))
+					}
+				}, 3000)
+			}),
+		])
+	} finally {
+		clearTimeout(timeout)
+	}
+}
 
-	const find = (props: any, parent: any, key: number | string) => {
-		if (props instanceof Output || props instanceof Future || props instanceof Promise) {
-			unresolved.push([parent, key])
-		} else if (Array.isArray(props)) {
-			props.map((value, index) => find(value, props, index))
-		} else if (props?.constructor === Object) {
-			Object.entries(props).map(([key, value]) => find(value, props, key))
+// Resolves every Output / Future / Promise in the input structure into a new
+// structure, without mutating the caller's inputs. The Output instances inside
+// a node's input are its dependency edges, so the original structure must stay
+// intact across deploys.
+//
+// When a fallback is given, a value that fails to resolve is substituted with
+// the fallback's value for that path instead of aborting the whole resolve.
+export const resolveInputs = async <T>(
+	inputs: T,
+	fallback?: (path: Array<string | number>) => unknown
+): Promise<T> => {
+	const resolve = async (value: unknown, path: Array<string | number>): Promise<unknown> => {
+		if (value instanceof Output || value instanceof Future || value instanceof Promise) {
+			try {
+				return await resolveWithTimeout(value)
+			} catch (error) {
+				if (fallback) {
+					return fallback(path)
+				}
+
+				throw error
+			}
 		}
+
+		if (Array.isArray(value)) {
+			return Promise.all(value.map((item, index) => resolve(item, [...path, index])))
+		}
+
+		if (value?.constructor === Object) {
+			const entries = Object.entries(value)
+			const resolved = await Promise.all(entries.map(([key, item]) => resolve(item, [...path, key])))
+			const result: Record<string, unknown> = {}
+
+			entries.forEach(([key], i) => {
+				result[key] = resolved[i]
+			})
+
+			return result
+		}
+
+		return value
 	}
 
-	find(inputs, {}, 'root')
-
-	const responses = await Promise.all(
-		unresolved.map(async ([obj, key]) => {
-			const promise = obj[key]
-
-			let timeout
-			try {
-				const response = await Promise.race([
-					promise,
-					new Promise((_, reject) => {
-						timeout = setTimeout(() => {
-							if (promise instanceof Output) {
-								reject(
-									new Error(
-										`Resolving Output<${[...promise.dependencies].map(d => d.urn).join(', ')}> took too long.`
-									)
-								)
-							} else if (promise instanceof Future) {
-								reject(new Error('Resolving Future took too long.'))
-							} else {
-								reject(new Error('Resolving Promise took too long.'))
-							}
-						}, 3000)
-					}),
-				])
-
-				return response
-			} finally {
-				clearTimeout(timeout)
-			}
-		})
-	)
-
-	// const responses = (await Promise.race([
-	// 	new Promise((_, reject) =>
-	// 		setTimeout(() => {
-	// 			reject(new Error('Resolving inputs took too long.'))
-	// 		}, 3000)
-	// 	),
-	// ])) as any[]
-
-	// const responses = (await Promise.race([
-	// 	Promise.all(unresolved.map(([obj, key]) => obj[key])),
-	// 	new Promise((_, reject) =>
-	// 		setTimeout(() => {
-	// 			reject(new Error('Resolving inputs took too long.'))
-	// 		}, 3000)
-	// 	),
-	// ])) as any[]
-
-	// const responses = await Promise.all(unresolved.map(([obj, key]) => obj[key]))
-
-	unresolved.forEach(([props, key], i) => {
-		props[key] = responses[i]
-	})
-
-	return inputs
+	return resolve(inputs, []) as Promise<T>
 }
 
 // function promiseRecursive(obj) {

@@ -1,11 +1,11 @@
 {
 	"name": "@terraforge/aws",
 	"description": "The Amazon Web Services (AWS) resource provider for Terraforge lets you use AWS resources in your cloud programs.",
-	"version": "6.35.1",
+	"version": "6.53.0",
 	"provider": {
 		"org": "hashicorp",
 		"type": "aws",
-		"version": "6.35.1"
+		"version": "6.53.0"
 	},
 	"repository": {
 		"type": "git",

@@ -168,6 +168,7 @@ describe('deploy', () => {
 			server: 'drifted',
 		}
 		node!.drifted = true
+		await stateBackend.update(app1.urn, stored!)
 
 		const app2 = new App('app')
 		const stack2 = new Stack(app2, 'stack')

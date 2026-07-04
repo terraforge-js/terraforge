@@ -1,11 +1,12 @@
 import { DynamoDB } from "@aws-sdk/client-dynamodb";
-import { S3Client } from "@aws-sdk/client-s3";
 import { UUID } from "node:crypto";
+import { S3Client } from "@aws-sdk/client-s3";
 import { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
 
 //#region src/future.d.ts
 declare class Future<T = unknown> {
   protected callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void;
+  readonly volatile: boolean;
   protected listeners: Set<{
     resolve: (data: T) => void;
     reject?: (error: unknown) => void;
@@ -13,7 +14,7 @@ declare class Future<T = unknown> {
   protected status: 0 | 1 | 2 | 3;
   protected data?: T;
   protected error?: unknown;
-  constructor(callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void);
+  constructor(callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void, volatile?: boolean);
   get [Symbol.toStringTag](): string;
   pipe<N>(cb: (value: T) => N): Future<Awaited<N>>;
   then(resolve: (data: T) => void, reject?: (error: unknown) => void): void;
@@ -25,13 +26,13 @@ type OptionalInput<T = unknown> = Input<T> | Input<T | undefined> | Input<undefi
 type UnwrapInputArray<T extends Input[]> = { [K in keyof T]: UnwrapInput<T[K]> };
 type UnwrapInput<T> = T extends Input<infer V> ? V : T;
 declare const findInputDeps: (props: unknown) => Meta[];
-declare const resolveInputs: <T>(inputs: T) => Promise<T>;
+declare const resolveInputs: <T>(inputs: T, fallback?: (path: Array<string | number>) => unknown) => Promise<T>;
 //#endregion
 //#region src/output.d.ts
 type OptionalOutput<T = unknown> = Output<T | undefined>;
 declare class Output<T = unknown> extends Future<T> {
   readonly dependencies: Set<Meta>;
-  constructor(dependencies: Set<Meta>, callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void);
+  constructor(dependencies: Set<Meta>, callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void, volatile?: boolean);
   pipe<N>(cb: (value: T) => N): Output<Awaited<N>>;
 }
 declare const deferredOutput: <T>(cb: (resolve: (data: T) => void) => void) => Output<T>;
@@ -169,6 +170,10 @@ type StackStatusInfo = {
 };
 //#endregion
 //#region src/backend/lock.d.ts
+declare class AlreadyLockedError extends Error {
+  readonly urn: URN;
+  constructor(urn: URN);
+}
 type LockBackend = {
   insecureReleaseLock(urn: URN): Promise<void>;
   locked(urn: URN): Promise<boolean>;
@@ -220,7 +225,7 @@ type Log = LogProps & {
 };
 type ActivityLogBackend = {
   log(urn: URN, log: LogProps): Promise<void>;
-  tail(urn: URN): Promise<Log[]>;
+  tail(urn: URN, limit?: number): Promise<Log[]>;
 };
 //#endregion
 //#region src/provider.d.ts
@@ -385,6 +390,7 @@ declare class WorkSpace {
       commit(): void;
     })[];
     commit: () => Promise<void>;
+    discard: () => Promise<void>;
   } | undefined>;
   /**
    * Get the status of all resources in the app by comparing current config with state file.
@@ -559,4 +565,4 @@ type CustomResourceProvider = Partial<{
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { ActivityLogBackend, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type RefreshResourceProps, type RefreshResourceResult, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { ActivityLogBackend, AlreadyLockedError, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type RefreshResourceProps, type RefreshResourceResult, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

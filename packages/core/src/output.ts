@@ -9,21 +9,26 @@ export type OptionalOutput<T = unknown> = Output<T | undefined>
 export class Output<T = unknown> extends Future<T> {
 	constructor(
 		readonly dependencies: Set<Meta>,
-		callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void
+		callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void,
+		volatile = false
 	) {
-		super(callback)
+		super(callback, volatile)
 	}
 
 	pipe<N>(cb: (value: T) => N) {
-		return new Output<Awaited<N>>(this.dependencies, (resolve, reject) => {
-			this.then(value => {
-				Promise.resolve(cb(value))
-					.then(value => {
-						resolve(value)
-					})
-					.catch(reject)
-			}, reject)
-		})
+		return new Output<Awaited<N>>(
+			this.dependencies,
+			(resolve, reject) => {
+				this.then(value => {
+					Promise.resolve(cb(value))
+						.then(value => {
+							resolve(value)
+						})
+						.catch(reject)
+				}, reject)
+			},
+			this.volatile
+		)
 	}
 }
 
@@ -61,19 +66,35 @@ export const output = <T>(value: T) => {
 //   return outputs;
 // };
 
+const hasVolatileInput = (props: unknown): boolean => {
+	if (props instanceof Future) {
+		return props.volatile
+	} else if (Array.isArray(props)) {
+		return props.some(hasVolatileInput)
+	} else if (props?.constructor === Object) {
+		return Object.values(props).some(hasVolatileInput)
+	}
+
+	return false
+}
+
 export const combine = <T extends Input[], R = UnwrapInputArray<T>>(...inputs: T): Output<R> => {
 	// const unresolved = findUnresolvedInputs(inputs);
 	// const deps = new Set(...inputs.filter(o => o instanceof Output).map(o => o.dependencies))
 	const deps = new Set(findInputDeps(inputs))
 
-	return new Output<R>(deps, (resolve, reject) => {
-		Promise.all(inputs)
-			// This will resolve deeper inputs
-			.then(resolveInputs)
-			.then(result => {
-				resolve(result as R)
-			}, reject)
-	})
+	return new Output<R>(
+		deps,
+		(resolve, reject) => {
+			Promise.all(inputs)
+				// This will resolve deeper inputs
+				.then(resolveInputs)
+				.then(result => {
+					resolve(result as R)
+				}, reject)
+		},
+		hasVolatileInput(inputs)
+	)
 }
 
 export const resolve = <T extends [Input, ...Input[]], R>(

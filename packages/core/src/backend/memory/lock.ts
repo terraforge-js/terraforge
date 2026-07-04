@@ -1,5 +1,5 @@
 import { URN } from '../../urn.ts'
-import { LockBackend } from '../lock.ts'
+import { AlreadyLockedError, LockBackend } from '../lock.ts'
 
 export class MemoryLockBackend implements LockBackend {
 	protected locks = new Map<URN, number>()
@@ -14,7 +14,7 @@ export class MemoryLockBackend implements LockBackend {
 
 	async lock(urn: URN) {
 		if (this.locks.has(urn)) {
-			throw new Error('Already locked')
+			throw new AlreadyLockedError(urn)
 		}
 
 		const id = Math.random()

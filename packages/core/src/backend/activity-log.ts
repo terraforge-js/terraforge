@@ -12,5 +12,6 @@ export type Log = LogProps & {
 
 export type ActivityLogBackend = {
 	log(urn: URN, log: LogProps): Promise<void>
-	tail(urn: URN): Promise<Log[]>
+	// Returns the most recent entries, newest first.
+	tail(urn: URN, limit?: number): Promise<Log[]>
 }

@@ -1,5 +1,5 @@
 import { App } from '../app.ts'
-import { LockBackend } from '../backend/lock.ts'
+import { AlreadyLockedError, LockBackend } from '../backend/lock.ts'
 import { onExit } from './exit.ts'
 
 export const lockApp = async <T>(lockBackend: LockBackend, app: App, fn: () => T): Promise<Awaited<T>> => {
@@ -7,7 +7,13 @@ export const lockApp = async <T>(lockBackend: LockBackend, app: App, fn: () => T
 	try {
 		releaseLock = await lockBackend.lock(app.urn)
 	} catch (error) {
-		throw new Error(`Already in progress: ${app.urn}`)
+		if (error instanceof AlreadyLockedError) {
+			throw new Error(`Already in progress: ${app.urn}`)
+		}
+
+		// Infrastructure errors must surface as themselves — reporting
+		// them as a held lock invites a wrongful insecureReleaseLock.
+		throw error
 	}
 
 	// --------------------------------------------------

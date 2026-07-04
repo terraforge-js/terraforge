@@ -1,7 +1,7 @@
 {
 	"name": "@terraforge/terraform",
 	"description": "This package is used to build Terraform bridge packages that can be used with @terraforge/core.",
-	"version": "0.0.31",
+	"version": "0.0.32",
 	"type": "module",
 	"repository": {
 		"type": "git",

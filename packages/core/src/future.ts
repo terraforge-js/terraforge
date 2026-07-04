@@ -13,7 +13,10 @@ export class Future<T = unknown> {
 	protected data?: T
 	protected error?: unknown
 
-	constructor(protected callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void) {}
+	constructor(
+		protected callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void,
+		readonly volatile = false
+	) {}
 
 	get [Symbol.toStringTag]() {
 		switch (this.status) {
@@ -40,11 +43,19 @@ export class Future<T = unknown> {
 					})
 					.catch(reject)
 			}, reject)
-		})
+		}, this.volatile)
 	}
 
 	then(resolve: (data: T) => void, reject?: (error: unknown) => void) {
-		if (this.status === RESOLVED) {
+		if (this.volatile) {
+			// Volatile futures re-invoke the callback on every then() and
+			// never settle, so a temporary value can't be cached forever.
+			try {
+				Promise.resolve(this.callback(resolve, error => reject?.(error))).catch(error => reject?.(error))
+			} catch (error) {
+				reject?.(error)
+			}
+		} else if (this.status === RESOLVED) {
 			resolve(this.data!)
 		} else if (this.status === REJECTED) {
 			reject?.(this.error)
@@ -74,7 +85,11 @@ export class Future<T = unknown> {
 					}
 				}
 
-				Promise.resolve(this.callback(onResolve, onReject)).catch(onReject)
+				try {
+					Promise.resolve(this.callback(onResolve, onReject)).catch(onReject)
+				} catch (error) {
+					onReject(error)
+				}
 			}
 		}
 	}

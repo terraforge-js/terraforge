@@ -41,4 +41,24 @@ describe('requiresReplacement util', () => {
 			expect(requiresReplacement(left, right, paths)).toBe(false)
 		}
 	})
+
+	it('wildcard paths should handle a removed array', () => {
+		// The whole array was removed from the proposed state — that's a
+		// change, not a crash.
+		expect(requiresReplacement(left, { id: 1, key: 1 }, ['list.*.key'])).toBe(true)
+	})
+
+	it('wildcard paths should handle an added array', () => {
+		expect(requiresReplacement({ id: 1, key: 1 }, left, ['list.*.key'])).toBe(true)
+	})
+
+	it('wildcard paths should handle added elements', () => {
+		const extended = {
+			...left,
+			list: [...left.list, { key: 9 }],
+		}
+
+		expect(requiresReplacement(left, extended, ['list.*.key'])).toBe(true)
+		expect(requiresReplacement(left, structuredClone(left), ['list.*.key'])).toBe(false)
+	})
 })

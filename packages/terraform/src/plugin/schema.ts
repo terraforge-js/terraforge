@@ -240,10 +240,30 @@ export const parseAttribute = (attr: Attribute): Property => {
 	}
 
 	if (attr.nestedType) {
+		const block = parseBlock(attr.nestedType)
+		const nesting = attr.nestedType.nesting
+
+		if (nesting === NestingMode.LIST || nesting === NestingMode.SET) {
+			return {
+				...prop,
+				type: 'array',
+				item: block,
+				collectionKind: nesting === NestingMode.SET ? 'set' : 'list',
+			}
+		}
+
+		if (nesting === NestingMode.MAP) {
+			return {
+				...prop,
+				type: 'record',
+				item: block,
+			}
+		}
+
+		// SINGLE (or unspecified) — a single nested object.
 		return {
 			...prop,
-			...parseBlock(attr.nestedType),
-			// properties: parseBlock(attr.nestedType).properties,
+			...block,
 		}
 	}
 

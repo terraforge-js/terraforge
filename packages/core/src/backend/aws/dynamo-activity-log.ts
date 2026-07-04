@@ -21,12 +21,18 @@ export class DynamoActivityLogBackend implements ActivityLogBackend {
 	async log(urn: URN, log: LogProps) {
 		await this.client.putItem({
 			TableName: this.props.tableName,
-			Item: marshall({
-				urn,
-				user: this.props.user,
-				date: Date.now(),
-				...log,
-			}),
+			Item: marshall(
+				{
+					urn,
+					user: this.props.user,
+					date: Date.now(),
+					...log,
+				},
+				{
+					// user and filters are optional and often undefined.
+					removeUndefinedValues: true,
+				}
+			),
 		})
 	}
 

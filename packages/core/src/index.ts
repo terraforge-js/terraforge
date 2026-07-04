@@ -12,6 +12,8 @@ export { createDebugger, enableDebug } from './debug.ts'
 export { WorkSpace } from './workspace/workspace.ts'
 export * from './workspace/error.ts'
 
+export { AlreadyLockedError } from './backend/lock.ts'
+
 export * from './backend/memory/activity-log.ts'
 export * from './backend/memory/state.ts'
 export * from './backend/memory/lock.ts'

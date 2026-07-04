@@ -17,49 +17,88 @@ export const createPluginServer = (props: { file: string; debug?: boolean }) => 
 
 		const process = spawn(`${props.file}`, ['-debug'])
 
+		let output = ''
+		let settled = false
+
+		const fail = (error: Error) => {
+			if (!settled) {
+				settled = true
+				clearTimeout(timeout)
+				process.kill()
+				debug('failed')
+				reject(error)
+			}
+		}
+
+		const timeout = setTimeout(() => {
+			fail(new Error('Timed out waiting for the plugin to start'))
+		}, 10_000)
+
+		process.on('error', fail)
+
+		process.on('exit', (code, signal) => {
+			if (!settled) {
+				fail(new Error(`The plugin exited before it was ready (code ${code})`))
+				return
+			}
+
+			// A plugin dying after startup is the usual cause of
+			// "14 UNAVAILABLE: Connection dropped" call failures.
+			debug('exited', code, signal)
+		})
+
 		process.stderr.on('data', (data: Buffer) => {
+			const message = data.toString('utf8')
+
+			// The provider's stderr holds the panic trace when it crashes.
+			debug('stderr', message)
+
 			// For some reason we need to listen to stderr data logs...
 			if (props.debug) {
-				const message = data.toString('utf8')
 				console.log(message)
 			}
 		})
 
-		process.stdout.once('data', (data: Buffer) => {
+		process.stdout.on('data', (data: Buffer) => {
+			if (settled) {
+				return
+			}
+
+			output += data.toString('utf8')
+
+			const matches = output.match(/TF_REATTACH_PROVIDERS='(.*)'/)
+
+			if (!matches) {
+				// The handshake line may arrive split across chunks.
+				return
+			}
+
 			try {
-				const message = data.toString('utf8')
-				const matches = message.match(/TF_REATTACH_PROVIDERS\=\'(.*)\'/)
+				const entries = Object.values(JSON.parse(matches[1]!))
 
-				if (matches && matches.length > 0) {
-					const match = matches[0]
-					const json = match.slice(23, -1)
-					const data = JSON.parse(json)
-					const entries = Object.values(data)
+				if (entries.length > 0) {
+					const entry: any = entries[0]!
+					const version: number = entry.ProtocolVersion
+					const endpoint: string = entry.Addr.String
 
-					if (entries.length > 0) {
-						const entry: any = entries[0]!
-						const version: number = entry.ProtocolVersion
-						const endpoint: string = entry.Addr.String
+					settled = true
+					clearTimeout(timeout)
+					debug('started', endpoint)
 
-						debug('started', endpoint)
+					resolve({
+						kill() {
+							process.kill()
+						},
+						protocol: 'tfplugin' + version.toFixed(1),
+						version,
+						endpoint,
+					})
 
-						resolve({
-							kill() {
-								process.kill()
-							},
-							protocol: 'tfplugin' + version.toFixed(1),
-							version,
-							endpoint,
-						})
-
-						return
-					}
+					return
 				}
 			} catch (error) {}
 
-			debug('failed')
-
-			reject(new Error('Failed to start the plugin'))
+			fail(new Error('Failed to start the plugin'))
 		})
 	})
 }

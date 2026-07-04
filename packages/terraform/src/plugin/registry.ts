@@ -11,10 +11,15 @@ type VersionsResponse = {
 	}[]
 }
 
-export type Version = `${number}.${number}.${number}` | 'latest'
+export type Version = `${number}.${number}.${number}`
 
 export const getProviderVersions = async (org: string, type: string) => {
 	const resp = await fetch(`${baseUrl}/${org}/${type}/versions`)
+
+	if (!resp.ok) {
+		throw new Error(`Failed to fetch provider versions for ${org}/${type}: ${resp.status}`)
+	}
+
 	const data = (await resp.json()) as VersionsResponse
 	const versions = data.versions
 	const os = getOS()
@@ -49,6 +54,11 @@ export const getProviderDownloadUrl = async (org: string, type: string, version:
 	].join('/')
 
 	const response = await fetch(url)
+
+	if (!response.ok) {
+		throw new Error(`Failed to fetch the provider download url for ${org}/${type}@${version}: ${response.status}`)
+	}
+
 	const result = (await response.json()) as {
 		download_url: string
 		shasum: string

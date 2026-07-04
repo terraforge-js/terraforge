@@ -19,7 +19,7 @@ export class Group {
 		readonly type: string,
 		readonly name: string
 	) {
-		parent?.children.push(this)
+		parent?.addChild(this)
 	}
 
 	get urn(): URN {
@@ -31,9 +31,9 @@ export class Group {
 		if (isNode(child)) {
 			const meta = getMeta(child)
 			const duplicate = this.children
-				.filter(c => isResource(c))
+				.filter(c => isNode(c))
 				.map(c => getMeta(c))
-				.find(c => c.type === meta.type && c.logicalId === meta.logicalId)
+				.find(c => c.urn === meta.urn)
 
 			if (duplicate) {
 				throw new Error(`Duplicate node found: ${meta.type}:${meta.logicalId}`)
@@ -44,6 +44,12 @@ export class Group {
 			const duplicate = this.children
 				.filter(c => c instanceof Group)
 				.find(c => c.type === child.type && c.name === child.name)
+
+			// Re-adding the same instance is a no-op, so explicitly calling
+			// add() on an already constructed group doesn't throw.
+			if (duplicate === child) {
+				return
+			}
 
 			if (duplicate) {
 				throw new Error(`Duplicate group found: ${child.type}:${child.name}`)

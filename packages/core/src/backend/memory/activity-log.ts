@@ -27,6 +27,6 @@ export class MemoryActivityLogBackend implements ActivityLogBackend {
 	}
 
 	async tail(urn: URN, limit = 10) {
-		return this.getLogGroup(urn).slice(-limit)
+		return this.getLogGroup(urn).slice(-limit).reverse()
 	}
 }

@@ -4,6 +4,7 @@ import { findProvider } from '../../provider.ts'
 import { URN } from '../../urn.ts'
 import { createConcurrencyQueue } from '../concurrency.ts'
 import { compareState, NodeState, StackState } from '../state.ts'
+import { getMigratedAppState } from '../state/migrate.ts'
 import { ProcedureOptions, WorkSpaceOptions } from '../workspace.ts'
 
 type ChangeOperation =
@@ -57,7 +58,7 @@ const createUpdateOperation = (
 }
 
 export const refresh = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
-	const appState = await opt.backend.state.get(app.urn)
+	const appState = await getMigratedAppState(opt.backend.state, app.urn)
 	const queue = createConcurrencyQueue(opt.concurrency ?? 10)
 
 	// -------------------------------------------------------
@@ -84,16 +85,17 @@ export const refresh = async (app: App, opt: WorkSpaceOptions & ProcedureOptions
 							const provider = findProvider(opt.providers, nodeState.provider)
 
 							if (nodeState.tag === 'data') {
-								const result = await provider.getData?.({
+								// A provider that can't read data sources can't
+								// tell us anything about them — skip, like
+								// resources without refreshResource below.
+								if (!provider.getData) {
+									return
+								}
+
+								const result = await provider.getData({
 									type: nodeState.type,
 									state: nodeState.output,
 								})
-
-								if (!result) {
-									return createDeleteOperation(urn, stackState, () => {
-										committed++
-									})
-								}
 
 								if (compareState(result.state, nodeState.output)) {
 									return

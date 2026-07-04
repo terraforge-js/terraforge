@@ -1,8 +1,8 @@
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { lock } from 'proper-lockfile'
+import { check, lock, unlock } from 'proper-lockfile'
 import { URN } from '../../urn.ts'
-import { LockBackend } from '../lock.ts'
+import { AlreadyLockedError, LockBackend } from '../lock.ts'
 
 export class FileLockBackend implements LockBackend {
 	constructor(
@@ -23,19 +23,31 @@ export class FileLockBackend implements LockBackend {
 
 	async insecureReleaseLock(urn: URN) {
 		if (await this.locked(urn)) {
-			await rm(this.lockFile(urn))
+			await unlock(this.lockFile(urn), {
+				realpath: false,
+			})
 		}
 	}
 
 	async locked(urn: URN) {
-		const result = await stat(this.lockFile(urn))
-		return result.isFile()
+		return check(this.lockFile(urn), {
+			realpath: false,
+		})
 	}
 
 	async lock(urn: URN) {
 		await this.mkdir()
-		return lock(this.lockFile(urn), {
-			realpath: false,
-		})
+
+		try {
+			return await lock(this.lockFile(urn), {
+				realpath: false,
+			})
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ELOCKED') {
+				throw new AlreadyLockedError(urn)
+			}
+
+			throw error
+		}
 	}
 }

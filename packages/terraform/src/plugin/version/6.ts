@@ -33,16 +33,23 @@ export const createPlugin6 = async ({
 			}
 		},
 		async stop() {
-			await client.call('StopProvider')
-			server.kill()
+			try {
+				await client.call('StopProvider')
+			} finally {
+				server.kill()
+			}
 		},
 		async configure(config) {
-			const prepared = await client.call('ValidateProviderConfig', {
-				config: encodeDynamicValue(formatInputState(provider, config)),
+			const encoded = encodeDynamicValue(formatInputState(provider, config))
+
+			await client.call('ValidateProviderConfig', {
+				config: encoded,
 			})
 
+			// Protocol 6 has no prepared config. The validated config
+			// itself is what gets sent to ConfigureProvider.
 			await client.call('ConfigureProvider', {
-				config: prepared.preparedConfig,
+				config: encoded,
 			})
 		},
 		async readResource(type, state) {
@@ -73,18 +80,19 @@ export const createPlugin6 = async ({
 		async planResourceChange(
 			type: string,
 			priorState: Record<string, unknown> | null,
-			proposedState: Record<string, unknown> | null
+			proposedState: Record<string, unknown> | null,
+			configState: Record<string, unknown> | null
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
 			const preparedProposedState = formatInputState(schema, proposedState)
-			const configState = formatInputState(schema, proposedState)
+			const preparedConfigState = formatInputState(schema, configState)
 
 			const plan = await client.call('PlanResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
-				config: encodeDynamicValue(configState),
+				config: encodeDynamicValue(preparedConfigState),
 			})
 
 			const rawPlannedState = decodeDynamicValue(plan.plannedState)
@@ -98,13 +106,15 @@ export const createPlugin6 = async ({
 			return {
 				requiresReplace,
 				plannedState,
+				rawPlannedState: plan.plannedState,
 			}
 		},
 		async applyResourceChange(
 			type: string,
 			priorState: Record<string, unknown> | null,
 			plannedState: Record<string, unknown> | null,
-			configState: Record<string, unknown> | null
+			configState: Record<string, unknown> | null,
+			rawPlannedState?: unknown
 		) {
 			const schema = getResourceSchema(resources, type)
 			const preparedPriorState = formatInputState(schema, priorState)
@@ -114,7 +124,7 @@ export const createPlugin6 = async ({
 			const apply = await client.call('ApplyResourceChange', {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
-				plannedState: encodeDynamicValue(preparedPlannedState),
+				plannedState: rawPlannedState ?? encodeDynamicValue(preparedPlannedState),
 				config: encodeDynamicValue(preparedConfigState),
 			})
 
