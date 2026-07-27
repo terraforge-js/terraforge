@@ -1,12 +1,6 @@
 import { AwsCredentialIdentity, AwsCredentialIdentityProvider } from '@aws-sdk/types'
 
-import {
-	DeleteObjectCommand,
-	GetObjectCommand,
-	PutObjectCommand,
-	S3Client,
-	S3ServiceException,
-} from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { URN } from '../../urn.ts'
 import { AppState } from '../../workspace/state.ts'
 import { StateBackend } from '../state.ts'
@@ -34,7 +28,10 @@ export class S3StateBackend implements StateBackend {
 				})
 			)
 		} catch (error) {
-			if (error instanceof S3ServiceException && error.name === 'NoSuchKey') {
+			// Matched by name only, because a runtime holding two module
+			// copies of the s3 client constructs errors that fail an
+			// instanceof check against the local exception class.
+			if (error instanceof Error && error.name === 'NoSuchKey') {
 				return
 			}
 
