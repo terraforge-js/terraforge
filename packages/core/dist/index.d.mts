@@ -509,6 +509,7 @@ type Props$1 = {
   credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider;
   region: string;
   tableName: string;
+  renewInterval?: number;
 };
 declare class DynamoLockBackend implements LockBackend {
   private props;

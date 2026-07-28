@@ -1724,7 +1724,7 @@ var DynamoLockBackend = class {
 	}
 	async lock(urn) {
 		const id = randomUUID();
-		const set = (condition) => {
+		const set = (condition, values) => {
 			return this.client.updateItem({
 				TableName: this.props.tableName,
 				Key: marshall({ urn }),
@@ -1735,21 +1735,23 @@ var DynamoLockBackend = class {
 				ExpressionAttributeValues: marshall({
 					":id": id,
 					":expires": Date.now() + LOCK_TTL,
-					":now": Date.now()
+					...values
 				}),
 				UpdateExpression: "SET #lock = :id, #expires = :expires",
 				ConditionExpression: condition
 			});
 		};
 		try {
-			await set("attribute_not_exists(#lock) OR #expires < :now");
+			await set("attribute_not_exists(#lock) OR #expires < :now", { ":now": Date.now() });
 		} catch (error) {
 			if (isConditionalCheckFailed(error)) throw new AlreadyLockedError(urn);
 			throw error;
 		}
 		const interval = setInterval(() => {
-			set("#lock = :id").catch(() => clearInterval(interval));
-		}, RENEW_INTERVAL);
+			set("#lock = :id", {}).catch((error) => {
+				if (isConditionalCheckFailed(error)) clearInterval(interval);
+			});
+		}, this.props.renewInterval ?? RENEW_INTERVAL);
 		interval.unref?.();
 		return async () => {
 			clearInterval(interval);

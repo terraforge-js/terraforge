@@ -9,6 +9,7 @@ type Props = {
 	credentials: AwsCredentialIdentity | AwsCredentialIdentityProvider
 	region: string
 	tableName: string
+	renewInterval?: number
 }
 
 // A lock expires if not renewed; the heartbeat renews it while held. A
@@ -64,7 +65,8 @@ export class DynamoLockBackend implements LockBackend {
 	async lock(urn: URN) {
 		const id = randomUUID()
 
-		const set = (condition: string) => {
+		// DynamoDB rejects expression values the condition doesn't reference.
+		const set = (condition: string, values: Record<string, unknown>) => {
 			return this.client.updateItem({
 				TableName: this.props.tableName,
 				Key: marshall({ urn }),
@@ -72,7 +74,7 @@ export class DynamoLockBackend implements LockBackend {
 				ExpressionAttributeValues: marshall({
 					':id': id,
 					':expires': Date.now() + LOCK_TTL,
-					':now': Date.now(),
+					...values,
 				}),
 				UpdateExpression: 'SET #lock = :id, #expires = :expires',
 				ConditionExpression: condition,
@@ -81,7 +83,7 @@ export class DynamoLockBackend implements LockBackend {
 
 		// Acquire: free, or held by a holder that stopped renewing.
 		try {
-			await set('attribute_not_exists(#lock) OR #expires < :now')
+			await set('attribute_not_exists(#lock) OR #expires < :now', { ':now': Date.now() })
 		} catch (error) {
 			if (isConditionalCheckFailed(error)) {
 				throw new AlreadyLockedError(urn)
@@ -92,8 +94,12 @@ export class DynamoLockBackend implements LockBackend {
 
 		// Renew while held; stop renewing if the lock was stolen.
 		const interval = setInterval(() => {
-			set('#lock = :id').catch(() => clearInterval(interval))
-		}, RENEW_INTERVAL)
+			set('#lock = :id', {}).catch(error => {
+				if (isConditionalCheckFailed(error)) {
+					clearInterval(interval)
+				}
+			})
+		}, this.props.renewInterval ?? RENEW_INTERVAL)
 		interval.unref?.()
 
 		return async () => {
