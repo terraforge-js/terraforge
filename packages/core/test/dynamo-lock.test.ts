@@ -173,16 +173,10 @@ describe('dynamo lock backend', () => {
 		expect(await expired.backend.locked(urn)).toBe(false)
 	})
 
-	it('locked should be true for live and legacy locks', async () => {
+	it('locked should be true for live locks', async () => {
 		const live = createBackend({
 			item: marshall({ urn, lock: 'some-id', expires: Date.now() + 60_000 }),
 		})
 		expect(await live.backend.locked(urn)).toBe(true)
-
-		// A legacy lock has no expiry but still blocks acquisition.
-		const legacy = createBackend({
-			item: marshall({ urn, lock: 12345 }),
-		})
-		expect(await legacy.backend.locked(urn)).toBe(true)
 	})
 })

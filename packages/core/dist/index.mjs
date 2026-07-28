@@ -1719,8 +1719,7 @@ var DynamoLockBackend = class {
 		if (!result.Item) return false;
 		const item = unmarshall(result.Item);
 		if (item.lock === void 0 || item.lock === null) return false;
-		if (typeof item.expires === "number") return item.expires > Date.now();
-		return true;
+		return typeof item.expires === "number" && item.expires > Date.now();
 	}
 	async lock(urn) {
 		const id = randomUUID();

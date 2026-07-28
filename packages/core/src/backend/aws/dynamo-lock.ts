@@ -53,13 +53,7 @@ export class DynamoLockBackend implements LockBackend {
 			return false
 		}
 
-		// A lock without an expiry (acquired by an older version) never
-		// expires and still blocks acquisition.
-		if (typeof item.expires === 'number') {
-			return item.expires > Date.now()
-		}
-
-		return true
+		return typeof item.expires === 'number' && item.expires > Date.now()
 	}
 
 	async lock(urn: URN) {
