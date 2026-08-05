@@ -71,7 +71,7 @@ export const createPluginClient = async (props: {
 					return
 				}
 
-				fn.call(client, payload, (error: Error | undefined, response: any) => {
+				fn.call(client, payload ?? {}, (error: Error | undefined, response: any) => {
 					if (error) {
 						debug('failed', error)
 						reject(error)
