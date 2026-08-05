@@ -1,3 +1,4 @@
+import { createDebugger } from '@terraforge/core'
 import type { PluginClient } from '../client.ts'
 import { parseProviderSchema, parseResourceSchema } from '../schema.ts'
 import type { PluginServer } from '../server.ts'
@@ -11,6 +12,8 @@ import {
 	formatOutputState,
 	getResourceSchema,
 } from './util.ts'
+
+const debug = createDebugger('Plugin6')
 
 export const createPlugin6 = async ({
 	server,
@@ -35,6 +38,11 @@ export const createPlugin6 = async ({
 		async stop() {
 			try {
 				await client.call('StopProvider')
+			} catch (error) {
+				// The plugin may already be dead — kill() below is what
+				// guarantees termination, so a failed Stop RPC must not
+				// mask the error that killed the plugin in the first place.
+				debug('stop failed', error)
 			} finally {
 				server.kill()
 			}

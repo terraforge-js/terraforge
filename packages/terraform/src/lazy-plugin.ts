@@ -9,7 +9,7 @@ export const createLazyPlugin = (props: DownloadPluginProps & { location?: strin
 	return async () => {
 		const { file } = await downloadPlugin(props)
 
-		const server = await retry(3, () => createPluginServer({ file, debug: false }))
+		const server = await retry(3, () => createPluginServer({ file }))
 
 		try {
 			const client = await retry(3, () => createPluginClient(server))

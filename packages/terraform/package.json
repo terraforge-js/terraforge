@@ -1,7 +1,7 @@
 {
 	"name": "@terraforge/terraform",
 	"description": "This package is used to build Terraform bridge packages that can be used with @terraforge/core.",
-	"version": "0.0.32",
+	"version": "0.0.35",
 	"type": "module",
 	"repository": {
 		"type": "git",
@@ -11,18 +11,18 @@
 		"url": "https://github.com/terraforge-js/terraforge/issues"
 	},
 	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.mjs",
+	"types": "./dist/index.d.mts",
 	"bin": {
 		"build-package": "./cli/build-package.ts"
 	},
 	"exports": {
 		".": {
-			"import": "./dist/index.mjs",
-			"types": "./dist/index.d.mjs"
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs"
 		}
 	},
 	"scripts": {
-		"build": "tsdown src/index.ts --format esm --dts --clean --out-dir ./dist",
+		"build": "tsdown src/index.ts --format esm --dts --tsconfig tsconfig.build.json --clean --out-dir ./dist",
 		"prepublishOnly": "if bun run test; then bun run build; else exit; fi",
 		"test": "bun test"
 	},

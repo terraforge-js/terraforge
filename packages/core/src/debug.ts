@@ -1,17 +1,23 @@
-let enabled = false
+export type DebugSink = (group: string, ...args: unknown[]) => void
 
-export const enableDebug = () => {
-	enabled = true
+const consoleSink: DebugSink = (group, ...args) => {
+	console.log()
+	console.log(`${group}:`, ...args)
+	console.log()
+}
+
+let sink: DebugSink | undefined
+
+export const enableDebug = (customSink?: DebugSink) => {
+	sink = customSink ?? consoleSink
+}
+
+export const disableDebug = () => {
+	sink = undefined
 }
 
 export const createDebugger = (group: string) => {
 	return (...args: unknown[]) => {
-		if (!enabled) {
-			return
-		}
-
-		console.log()
-		console.log(`${group}:`, ...args)
-		console.log()
+		sink?.(group, ...args)
 	}
 }

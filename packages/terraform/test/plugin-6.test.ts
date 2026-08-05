@@ -42,6 +42,29 @@ describe('plugin protocol 6', () => {
 
 	const server = { kill() {} } as unknown as PluginServer
 
+	it('stop should not reject when the plugin is already dead', async () => {
+		const { client } = createStubClient()
+		let killed = false
+
+		const originalCall = client.call
+		client.call = async (method, payload) => {
+			if (method === 'StopProvider') {
+				throw new Error('14 UNAVAILABLE: No connection established')
+			}
+
+			return originalCall(method, payload)
+		}
+
+		const plugin = await createPlugin6({
+			server: { kill: () => (killed = true) } as unknown as PluginServer,
+			client,
+		})
+
+		await plugin.stop()
+
+		expect(killed).toBe(true)
+	})
+
 	it('configure should send the config to ConfigureProvider', async () => {
 		const { client, calls } = createStubClient()
 		const plugin = await createPlugin6({ server, client })

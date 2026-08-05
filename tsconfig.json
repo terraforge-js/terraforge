@@ -3,11 +3,11 @@
 		"target": "ESNext",
 		"module": "ESNext",
 		"lib": ["ESNext"],
-		"types": ["bun-types", "bun-types/test-globals", "node"],
-		"baseUrl": ".",
+		"types": ["bun-types", "bun-types/test-globals"],
+		// "baseUrl": ".",
 		"paths": {
-			"@terraforge/core": ["packages/core/src/index.ts"],
-			"@terraforge/terraform": ["packages/terraform/src/index.ts"]
+			"@terraforge/core": ["./packages/core/src/index.ts"],
+			"@terraforge/terraform": ["./packages/terraform/src/index.ts"]
 		},
 		"moduleResolution": "bundler",
 		"noEmit": true,

@@ -89,6 +89,12 @@ export type Property = {
 	computed?: boolean
 	deprecated?: boolean
 	sensitive?: boolean
+	/**
+	 * True when the property comes from a nested block. Terraform never
+	 * sends null blocks to providers — absent blocks are encoded as empty
+	 * collections, and provider code relies on that invariant.
+	 */
+	block?: boolean
 } & (
 	| {
 			type: 'string' | 'number' | 'boolean'
@@ -175,6 +181,7 @@ export const parseNestedBlock = (block: NestedBlock): Property => {
 			...prop,
 			type,
 			item,
+			block: true,
 			collectionKind: block.nesting === NestingMode.SET ? 'set' : 'list',
 		}
 	}
@@ -184,6 +191,7 @@ export const parseNestedBlock = (block: NestedBlock): Property => {
 			...prop,
 			...item,
 			type,
+			block: true,
 		}
 	}
 

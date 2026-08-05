@@ -10,7 +10,6 @@ import { arch, homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import "semver";
 import { spawn } from "node:child_process";
-
 //#region src/type-gen.ts
 const tab = (indent) => {
 	return "	".repeat(indent);
@@ -84,7 +83,7 @@ const generatePropertyInputType = (prop, indent) => {
 		wrap: (v, p, ctx) => {
 			return ctx.depth > 0 ? p.optional ? `c.OptionalInput<${v}>` : `c.Input<${v}>` : v;
 		},
-		filter: (prop$1) => !(prop$1.computed && typeof prop$1.optional === "undefined" && typeof prop$1.required === "undefined"),
+		filter: (prop) => !(prop.computed && typeof prop.optional === "undefined" && typeof prop.required === "undefined"),
 		optional: (p) => p.optional ?? false
 	});
 };
@@ -100,13 +99,13 @@ const generatePropertyOutputType = (prop, indent) => {
 };
 const generateClassProperties = (prop, indent) => {
 	if (prop.type !== "object") return "";
-	return Object.entries(prop.properties).map(([name, prop$1]) => {
+	return Object.entries(prop.properties).map(([name, prop]) => {
 		return [
-			prop$1.description ? [
+			prop.description ? [
 				`\n`,
 				`\t`.repeat(indent),
 				`/** `,
-				prop$1.description.trim(),
+				prop.description.trim(),
 				" */",
 				"\n"
 			].join("") : "",
@@ -114,7 +113,7 @@ const generateClassProperties = (prop, indent) => {
 			"readonly ",
 			camelCase(name),
 			": ",
-			generateValue(prop$1, {
+			generateValue(prop, {
 				readonly: true,
 				filter: () => true,
 				optional: (p, ctx) => ctx.depth > 1 && p.optional && !p.computed || false,
@@ -152,9 +151,9 @@ const generateNamespace = (resources, render) => {
 		if (typeof group === "string") return render(name, resources[group], indent);
 		return [
 			`${tab(indent)}export ${indent === 0 ? "declare " : ""}namespace ${name.toLowerCase()} {`,
-			Object.entries(group).map(([name$1, entry]) => {
-				if (typeof entry !== "string") return renderNamespace(name$1, entry, indent + 1);
-				else return render(name$1, resources[entry], indent + 1);
+			Object.entries(group).map(([name, entry]) => {
+				if (typeof entry !== "string") return renderNamespace(name, entry, indent + 1);
+				else return render(name, resources[entry], indent + 1);
 			}).join("\n"),
 			`${tab(indent)}}`
 		].join("\n");
@@ -189,20 +188,20 @@ const generateValue = (prop, ctx) => {
 	if (prop.type === "object" || prop.type === "array-object") {
 		const type = [
 			"{",
-			Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(([name, prop$1]) => [
-				prop$1.description ? [
+			Object.entries(prop.properties).filter(([_, p]) => ctx.filter(p)).map(([name, prop]) => [
+				prop.description ? [
 					`\n`,
 					`\t`.repeat(ctx.indent),
 					`/** `,
-					prop$1.description.trim(),
+					prop.description.trim(),
 					" */",
 					"\n"
 				].join("") : "",
 				`\t`.repeat(ctx.indent),
 				camelCase(name),
-				ctx.optional(prop$1, ctx) ? "?" : "",
+				ctx.optional(prop, ctx) ? "?" : "",
 				": ",
-				generateValue(prop$1, {
+				generateValue(prop, {
 					...ctx,
 					indent: ctx.indent + 1,
 					depth: ctx.depth + 1
@@ -215,7 +214,6 @@ const generateValue = (prop, ctx) => {
 	}
 	throw new Error(`Unknown property type: ${prop.type}`);
 };
-
 //#endregion
 //#region src/plugin/version/util.ts
 const stableStringify = (value) => {
@@ -359,9 +357,10 @@ const normalizeStateForComparison = (schema, state, inputState, allowStructuralF
 		if (typeof state !== "object" || state === null) return state;
 		const normalized = Object.fromEntries(Object.entries(schema.properties).flatMap(([key, prop]) => {
 			const stateValue = state[camelCase(key)];
-			const normalized$1 = normalizeStateForComparison(prop, stateValue, inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0, allowStructuralFallback);
-			if (typeof normalized$1 === "undefined") return [];
-			return [[camelCase(key), normalized$1]];
+			const inputValue = inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0;
+			const normalized = normalizeStateForComparison(prop, stateValue, inputValue, allowStructuralFallback);
+			if (typeof normalized === "undefined") return [];
+			return [[camelCase(key), normalized]];
 		}));
 		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) return normalizeStateForComparison(schema, inputState, inputState, false);
 		return normalized;
@@ -370,9 +369,10 @@ const normalizeStateForComparison = (schema, state, inputState, allowStructuralF
 		if (typeof state !== "object" || state === null) return state;
 		const normalized = Object.fromEntries(Object.entries(schema.properties).flatMap(([key, prop]) => {
 			const stateValue = state[camelCase(key)];
-			const normalized$1 = normalizeStateForComparison(prop, stateValue, inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0, allowStructuralFallback);
-			if (typeof normalized$1 === "undefined") return [];
-			return [[camelCase(key), normalized$1]];
+			const inputValue = inputState && typeof inputState === "object" ? inputState[camelCase(key)] : void 0;
+			const normalized = normalizeStateForComparison(prop, stateValue, inputValue, allowStructuralFallback);
+			if (typeof normalized === "undefined") return [];
+			return [[camelCase(key), normalized]];
 		}));
 		if (allowStructuralFallback && Object.keys(normalized).length === 0 && isEmptyStructuralInput(inputState)) return normalizeStateForComparison(schema, inputState, inputState, false);
 		return normalized;
@@ -383,8 +383,13 @@ const normalizeStateForComparison = (schema, state, inputState, allowStructuralF
 	return state;
 };
 const formatInputState = (schema, state, includeSchemaFields = true, path = []) => {
-	if (state === null) return null;
-	if (typeof state === "undefined") return null;
+	if (state === null || typeof state === "undefined") {
+		if (schema.block) {
+			if (schema.type === "array" || schema.type === "array-object") return [];
+			if (schema.type === "record") return {};
+		}
+		return null;
+	}
 	if (schema.type === "unknown") return state;
 	if (schema.type === "string") {
 		if (typeof state === "string") return state;
@@ -470,10 +475,13 @@ const formatOutputState = (schema, state, path = []) => {
 	}
 	return state;
 };
-
 //#endregion
 //#region src/provider.ts
 var TerraformProvider = class {
+	type;
+	id;
+	createPlugin;
+	config;
 	configured;
 	plugin;
 	constructor(type, id, createPlugin, config) {
@@ -586,10 +594,10 @@ var TerraformProvider = class {
 		};
 	}
 };
-
 //#endregion
 //#region src/plugin/diagnostic.ts
 var DiagnosticsError = class extends Error {
+	diagnostics;
 	constructor(diagnostics) {
 		super(formatDiagnosticErrorMessage(diagnostics));
 		this.diagnostics = diagnostics;
@@ -616,7 +624,6 @@ const throwDiagnosticError = (response) => {
 		})
 	})));
 };
-
 //#endregion
 //#region src/plugin/protocol/tfplugin5.ts
 var tfplugin5_default = {
@@ -1261,7 +1268,6 @@ var tfplugin5_default = {
 		}
 	} } }
 };
-
 //#endregion
 //#region src/plugin/protocol/tfplugin6.ts
 var tfplugin6_default = {
@@ -1895,10 +1901,9 @@ var tfplugin6_default = {
 		}
 	} } }
 };
-
 //#endregion
 //#region src/plugin/client.ts
-const debug$2 = createDebugger("Client");
+const debug$4 = createDebugger("Client");
 const protocols = {
 	tfplugin5: tfplugin5_default,
 	tfplugin6: tfplugin6_default
@@ -1911,7 +1916,7 @@ const createPluginClient = async (props) => {
 		"grpc.max_receive_message_length": 100 * 1024 * 1024,
 		"grpc.max_send_message_length": 100 * 1024 * 1024
 	});
-	debug$2("init", props.protocol);
+	debug$4("init", props.protocol);
 	await new Promise((resolve, reject) => {
 		const deadline = /* @__PURE__ */ new Date();
 		deadline.setSeconds(deadline.getSeconds() + 10);
@@ -1920,31 +1925,30 @@ const createPluginClient = async (props) => {
 			else resolve();
 		});
 	});
-	debug$2("connected");
+	debug$4("connected");
 	return { call(method, payload) {
 		return new Promise((resolve, reject) => {
 			const fn = client[method];
-			debug$2("call", method);
+			debug$4("call", method);
 			if (!fn) {
 				reject(/* @__PURE__ */ new Error(`Unknown method call: ${method}`));
 				return;
 			}
 			fn.call(client, payload, (error, response) => {
 				if (error) {
-					debug$2("failed", error);
+					debug$4("failed", error);
 					reject(error);
 				} else if (hasErrorDiagnostic(response)) {
-					debug$2("failed", response.diagnostics);
+					debug$4("failed", response.diagnostics);
 					reject(throwDiagnosticError(response));
 				} else {
-					if (response.diagnostics) debug$2("warning", response.diagnostics);
+					if (response.diagnostics) debug$4("warning", response.diagnostics);
 					resolve(response);
 				}
 			});
 		});
 	} };
 };
-
 //#endregion
 //#region src/plugin/registry.ts
 const baseUrl = "https://registry.terraform.io/v1/providers";
@@ -1988,7 +1992,6 @@ const getArchitecture = () => {
 	}
 	throw new Error(`Unsupported architecture: ${ar}`);
 };
-
 //#endregion
 //#region src/plugin/download.ts
 const exists = async (file) => {
@@ -1999,7 +2002,7 @@ const exists = async (file) => {
 	}
 	return true;
 };
-const debug$1 = createDebugger("Downloader");
+const debug$3 = createDebugger("Downloader");
 const installPath = join(homedir(), ".terraforge", "plugins");
 const getInstallPath = (props) => {
 	return join(props.location ?? installPath, `${props.org}-${props.type}-${props.version}`);
@@ -2010,15 +2013,15 @@ const isPluginInstalled = (props) => {
 const deletePlugin = async (props) => {
 	const file = getInstallPath(props);
 	if (await isPluginInstalled(props)) {
-		debug$1(props.type, "deleting...");
+		debug$3(props.type, "deleting...");
 		await rm(file);
-		debug$1(props.type, "deleted");
-	} else debug$1(props.type, "not installed");
+		debug$3(props.type, "deleted");
+	} else debug$3(props.type, "not installed");
 };
 const downloadPlugin = async (props) => {
 	const file = getInstallPath(props);
 	if (!await isPluginInstalled(props)) {
-		debug$1(props.type, "downloading...");
+		debug$3(props.type, "downloading...");
 		const info = await getProviderDownloadUrl(props.org, props.type, props.version);
 		const res = await fetch(info.url);
 		if (!res.ok) throw new Error(`Failed to download the provider: ${res.status}`);
@@ -2027,27 +2030,26 @@ const downloadPlugin = async (props) => {
 			const hash = createHash("sha256").update(buf).digest("hex");
 			if (hash !== info.shasum) throw new Error(`Provider download checksum mismatch: expected ${info.shasum}, got ${hash}`);
 		}
-		const zipped = (await jszip.loadAsync(buf)).filter((file$1) => file$1.startsWith("terraform-provider")).at(0);
+		const zipped = (await jszip.loadAsync(buf)).filter((file) => file.startsWith("terraform-provider")).at(0);
 		if (!zipped) throw new Error(`Can't find the provider inside the downloaded zip file.`);
 		const binary = await zipped.async("nodebuffer");
-		debug$1(props.type, "done");
+		debug$3(props.type, "done");
 		await mkdir(dirname(file), { recursive: true });
 		const temp = `${file}.tmp`;
 		await writeFile(temp, binary, { mode: 509 });
 		await rename(temp, file);
-	} else debug$1(props.type, "already downloaded");
+	} else debug$3(props.type, "already downloaded");
 	return {
 		file,
 		version: props.version
 	};
 };
-
 //#endregion
 //#region src/plugin/server.ts
-const debug = createDebugger("Server");
+const debug$2 = createDebugger("Server");
 const createPluginServer = (props) => {
 	return new Promise((resolve, reject) => {
-		debug("init");
+		debug$2("init");
 		const process = spawn(`${props.file}`, ["-debug"]);
 		let output = "";
 		let settled = false;
@@ -2056,7 +2058,7 @@ const createPluginServer = (props) => {
 				settled = true;
 				clearTimeout(timeout);
 				process.kill();
-				debug("failed");
+				debug$2("failed");
 				reject(error);
 			}
 		};
@@ -2069,12 +2071,10 @@ const createPluginServer = (props) => {
 				fail(/* @__PURE__ */ new Error(`The plugin exited before it was ready (code ${code})`));
 				return;
 			}
-			debug("exited", code, signal);
+			debug$2("exited", code, signal);
 		});
 		process.stderr.on("data", (data) => {
-			const message = data.toString("utf8");
-			debug("stderr", message);
-			if (props.debug) console.log(message);
+			debug$2(data.toString("utf8"));
 		});
 		process.stdout.on("data", (data) => {
 			if (settled) return;
@@ -2089,7 +2089,7 @@ const createPluginServer = (props) => {
 					const endpoint = entry.Addr.String;
 					settled = true;
 					clearTimeout(timeout);
-					debug("started", endpoint);
+					debug$2("started", endpoint);
 					resolve({
 						kill() {
 							process.kill();
@@ -2105,7 +2105,6 @@ const createPluginServer = (props) => {
 		});
 	});
 };
-
 //#endregion
 //#region src/plugin/schema.ts
 const NestingMode = {
@@ -2161,12 +2160,14 @@ const parseNestedBlock = (block) => {
 		...prop,
 		type,
 		item,
+		block: true,
 		collectionKind: block.nesting === NestingMode.SET ? "set" : "list"
 	};
 	if (type === "array-object") return {
 		...prop,
 		...item,
-		type
+		type,
+		block: true
 	};
 	return {
 		...prop,
@@ -2224,21 +2225,21 @@ const parseAttribute = (attr) => {
 const parseAttributeType = (item) => {
 	if (Array.isArray(item)) {
 		const sourceType = item[0];
-		const type$1 = parseType(sourceType);
-		if (type$1 === "array" || type$1 === "record" && item) {
+		const type = parseType(sourceType);
+		if (type === "array" || type === "record" && item) {
 			const record = item[1];
 			return {
-				type: type$1,
+				type,
 				item: parseAttributeType(record),
 				collectionKind: sourceType === "set" ? "set" : "list"
 			};
 		}
-		if (type$1 === "object") {
+		if (type === "object") {
 			const object = item[1];
 			const properties = {};
 			for (const [name, prop] of Object.entries(object)) properties[name] = parseAttributeType(prop);
 			return {
-				type: type$1,
+				type,
 				properties
 			};
 		}
@@ -2266,9 +2267,9 @@ const parseType = (type) => {
 	if (type === "dynamic") return "unknown";
 	throw new Error(`Invalid type: ${type}`);
 };
-
 //#endregion
 //#region src/plugin/version/5.ts
+const debug$1 = createDebugger("Plugin5");
 const createPlugin5 = async ({ server, client }) => {
 	const schema = await client.call("GetSchema", {});
 	const provider = parseProviderSchema(schema.provider);
@@ -2285,6 +2286,8 @@ const createPlugin5 = async ({ server, client }) => {
 		async stop() {
 			try {
 				await client.call("Stop");
+			} catch (error) {
+				debug$1("stop failed", error);
 			} finally {
 				server.kill();
 			}
@@ -2294,38 +2297,38 @@ const createPlugin5 = async ({ server, client }) => {
 			await client.call("Configure", { config: prepared.preparedConfig });
 		},
 		async readResource(type, state) {
-			const schema$1 = getResourceSchema(resources, type);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ReadResource", {
+			const schema = getResourceSchema(resources, type);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ReadResource", {
 				typeName: type,
-				currentState: encodeDynamicValue(formatInputState(schema$1, state))
+				currentState: encodeDynamicValue(formatInputState(schema, state))
 			})).newState));
 		},
 		async readDataSource(type, state) {
-			const schema$1 = getResourceSchema(dataSources, type);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ReadDataSource", {
+			const schema = getResourceSchema(dataSources, type);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ReadDataSource", {
 				typeName: type,
-				config: encodeDynamicValue(formatInputState(schema$1, state))
+				config: encodeDynamicValue(formatInputState(schema, state))
 			})).state));
 		},
 		async validateResource(type, state) {
-			const schema$1 = getResourceSchema(resources, type);
+			const schema = getResourceSchema(resources, type);
 			await client.call("ValidateResourceTypeConfig", {
 				typeName: type,
-				config: encodeDynamicValue(formatInputState(schema$1, state))
+				config: encodeDynamicValue(formatInputState(schema, state))
 			});
 		},
 		async planResourceChange(type, priorState, proposedState, configState) {
-			const schema$1 = getResourceSchema(resources, type);
-			const preparedPriorState = formatInputState(schema$1, priorState);
-			const preparedProposedState = formatInputState(schema$1, proposedState);
-			const preparedConfigState = formatInputState(schema$1, configState);
+			const schema = getResourceSchema(resources, type);
+			const preparedPriorState = formatInputState(schema, priorState);
+			const preparedProposedState = formatInputState(schema, proposedState);
+			const preparedConfigState = formatInputState(schema, configState);
 			const plan = await client.call("PlanResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
 				config: encodeDynamicValue(preparedConfigState)
 			});
-			const plannedState = formatOutputState(schema$1, decodeDynamicValue(plan.plannedState));
+			const plannedState = formatOutputState(schema, decodeDynamicValue(plan.plannedState));
 			return {
 				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
 				plannedState,
@@ -2333,11 +2336,11 @@ const createPlugin5 = async ({ server, client }) => {
 			};
 		},
 		async applyResourceChange(type, priorState, plannedState, configState, rawPlannedState) {
-			const schema$1 = getResourceSchema(resources, type);
-			const preparedPriorState = formatInputState(schema$1, priorState);
-			const preparedPlannedState = formatInputState(schema$1, plannedState);
-			const preparedConfigState = formatInputState(schema$1, configState);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ApplyResourceChange", {
+			const schema = getResourceSchema(resources, type);
+			const preparedPriorState = formatInputState(schema, priorState);
+			const preparedPlannedState = formatInputState(schema, plannedState);
+			const preparedConfigState = formatInputState(schema, configState);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ApplyResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				plannedState: rawPlannedState ?? encodeDynamicValue(preparedPlannedState),
@@ -2346,9 +2349,9 @@ const createPlugin5 = async ({ server, client }) => {
 		}
 	};
 };
-
 //#endregion
 //#region src/plugin/version/6.ts
+const debug = createDebugger("Plugin6");
 const createPlugin6 = async ({ server, client }) => {
 	const schema = await client.call("GetProviderSchema", {});
 	const provider = parseProviderSchema(schema.provider);
@@ -2365,6 +2368,8 @@ const createPlugin6 = async ({ server, client }) => {
 		async stop() {
 			try {
 				await client.call("StopProvider");
+			} catch (error) {
+				debug("stop failed", error);
 			} finally {
 				server.kill();
 			}
@@ -2375,38 +2380,38 @@ const createPlugin6 = async ({ server, client }) => {
 			await client.call("ConfigureProvider", { config: encoded });
 		},
 		async readResource(type, state) {
-			const schema$1 = getResourceSchema(resources, type);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ReadResource", {
+			const schema = getResourceSchema(resources, type);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ReadResource", {
 				typeName: type,
-				currentState: encodeDynamicValue(formatInputState(schema$1, state))
+				currentState: encodeDynamicValue(formatInputState(schema, state))
 			})).newState));
 		},
 		async readDataSource(type, state) {
-			const schema$1 = getResourceSchema(dataSources, type);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ReadDataSource", {
+			const schema = getResourceSchema(dataSources, type);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ReadDataSource", {
 				typeName: type,
-				config: encodeDynamicValue(formatInputState(schema$1, state))
+				config: encodeDynamicValue(formatInputState(schema, state))
 			})).state));
 		},
 		async validateResource(type, state) {
-			const schema$1 = getResourceSchema(resources, type);
+			const schema = getResourceSchema(resources, type);
 			await client.call("ValidateResourceConfig", {
 				typeName: type,
-				config: encodeDynamicValue(formatInputState(schema$1, state))
+				config: encodeDynamicValue(formatInputState(schema, state))
 			});
 		},
 		async planResourceChange(type, priorState, proposedState, configState) {
-			const schema$1 = getResourceSchema(resources, type);
-			const preparedPriorState = formatInputState(schema$1, priorState);
-			const preparedProposedState = formatInputState(schema$1, proposedState);
-			const preparedConfigState = formatInputState(schema$1, configState);
+			const schema = getResourceSchema(resources, type);
+			const preparedPriorState = formatInputState(schema, priorState);
+			const preparedProposedState = formatInputState(schema, proposedState);
+			const preparedConfigState = formatInputState(schema, configState);
 			const plan = await client.call("PlanResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				proposedNewState: encodeDynamicValue(preparedProposedState),
 				config: encodeDynamicValue(preparedConfigState)
 			});
-			const plannedState = formatOutputState(schema$1, decodeDynamicValue(plan.plannedState));
+			const plannedState = formatOutputState(schema, decodeDynamicValue(plan.plannedState));
 			return {
 				requiresReplace: filterRequiresReplace(formatAttributePath(plan.requiresReplace), preparedPriorState, preparedProposedState),
 				plannedState,
@@ -2414,11 +2419,11 @@ const createPlugin6 = async ({ server, client }) => {
 			};
 		},
 		async applyResourceChange(type, priorState, plannedState, configState, rawPlannedState) {
-			const schema$1 = getResourceSchema(resources, type);
-			const preparedPriorState = formatInputState(schema$1, priorState);
-			const preparedPlannedState = formatInputState(schema$1, plannedState);
-			const preparedConfigState = formatInputState(schema$1, configState);
-			return formatOutputState(schema$1, decodeDynamicValue((await client.call("ApplyResourceChange", {
+			const schema = getResourceSchema(resources, type);
+			const preparedPriorState = formatInputState(schema, priorState);
+			const preparedPlannedState = formatInputState(schema, plannedState);
+			const preparedConfigState = formatInputState(schema, configState);
+			return formatOutputState(schema, decodeDynamicValue((await client.call("ApplyResourceChange", {
 				typeName: type,
 				priorState: encodeDynamicValue(preparedPriorState),
 				plannedState: rawPlannedState ?? encodeDynamicValue(preparedPlannedState),
@@ -2427,16 +2432,12 @@ const createPlugin6 = async ({ server, client }) => {
 		}
 	};
 };
-
 //#endregion
 //#region src/lazy-plugin.ts
 const createLazyPlugin = (props) => {
 	return async () => {
 		const { file } = await downloadPlugin(props);
-		const server = await retry(3, () => createPluginServer({
-			file,
-			debug: false
-		}));
+		const server = await retry(3, () => createPluginServer({ file }));
 		try {
 			const client = await retry(3, () => createPluginClient(server));
 			const plugin = await {
@@ -2466,7 +2467,6 @@ const retry = async (tries, cb) => {
 	}
 	throw latestError ?? /* @__PURE__ */ new Error("No retry attempts were made.");
 };
-
 //#endregion
 //#region src/proxy.ts
 const classMap = /* @__PURE__ */ new Map();
@@ -2585,7 +2585,8 @@ const createTerraformProxy = (props) => {
 			});
 		},
 		class: (ns) => {
-			return getClass(snakeCase([props.namespace, ...ns].join("_")));
+			const type = snakeCase([props.namespace, ...ns].join("_"));
+			return getClass(type);
 		},
 		resource: (ns, parent, id, input, config) => {
 			const type = snakeCase([props.namespace, ...ns].join("_"));
@@ -2613,6 +2614,5 @@ const createTerraformProxy = (props) => {
 		}
 	});
 };
-
 //#endregion
 export { TerraformProvider, createTerraformProxy, generateTypes };

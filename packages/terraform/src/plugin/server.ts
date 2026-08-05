@@ -11,7 +11,7 @@ export type PluginServer = {
 
 const debug = createDebugger('Server')
 
-export const createPluginServer = (props: { file: string; debug?: boolean }) => {
+export const createPluginServer = (props: { file: string }) => {
 	return new Promise<PluginServer>((resolve, reject) => {
 		debug('init')
 
@@ -48,15 +48,8 @@ export const createPluginServer = (props: { file: string; debug?: boolean }) => 
 		})
 
 		process.stderr.on('data', (data: Buffer) => {
-			const message = data.toString('utf8')
-
 			// The provider's stderr holds the panic trace when it crashes.
-			debug('stderr', message)
-
-			// For some reason we need to listen to stderr data logs...
-			if (props.debug) {
-				console.log(message)
-			}
+			debug(data.toString('utf8'))
 		})
 
 		process.stdout.on('data', (data: Buffer) => {

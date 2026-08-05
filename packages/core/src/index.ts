@@ -7,7 +7,7 @@ export { findInputDeps, resolveInputs } from './input.ts'
 export { Future } from './future.ts'
 export { createMeta } from './meta.ts'
 export { isNode, isResource, isDataSource, nodeMetaSymbol, getMeta } from './node.ts'
-export { createDebugger, enableDebug } from './debug.ts'
+export { createDebugger, enableDebug, disableDebug, type DebugSink } from './debug.ts'
 
 export { WorkSpace } from './workspace/workspace.ts'
 export * from './workspace/error.ts'

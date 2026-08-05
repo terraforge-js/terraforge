@@ -1,7 +1,7 @@
 {
 	"name": "@terraforge/core",
 	"description": "Infrastructure as code made fast & easy",
-	"version": "0.0.42",
+	"version": "0.0.43",
 	"type": "module",
 	"repository": {
 		"type": "git",
@@ -11,11 +11,11 @@
 		"url": "https://github.com/terraforge-js/terraforge/issues"
 	},
 	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.mjs",
+	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
-			"import": "./dist/index.mjs",
-			"types": "./dist/index.d.mjs"
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs"
 		}
 	},
 	"scripts": {

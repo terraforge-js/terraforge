@@ -355,21 +355,20 @@ export const formatInputState = (
 ): unknown => {
 	// console.log(path, state, schema)
 
-	if (state === null) {
-		return null
-	}
+	if (state === null || typeof state === 'undefined') {
+		// Terraform never sends null blocks to providers — absent blocks
+		// are encoded as empty collections, and provider code relies on
+		// that invariant (a null trips IsKnown-only guards and panics).
+		if (schema.block) {
+			if (schema.type === 'array' || schema.type === 'array-object') {
+				return []
+			}
 
-	// if (schema.computed && typeof schema.optional === 'undefined' && typeof schema.required === 'undefined') {
-	// 	console.log(schema, state)
+			if (schema.type === 'record') {
+				return {}
+			}
+		}
 
-	// 	return undefined
-	// }
-
-	// if (schema.optional && typeof state === 'undefined') {
-	// 	return null
-	// }
-
-	if (typeof state === 'undefined') {
 		return null
 	}
 
