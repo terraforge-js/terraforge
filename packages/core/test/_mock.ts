@@ -14,7 +14,7 @@ import {
 } from '../src'
 import { Hooks } from '../src/workspace/hooks'
 
-export const createMockProvider = (config?: { requireReplacement?: boolean }) => {
+export const createMockProvider = (config?: { requireReplacement?: boolean; planError?: boolean }) => {
 	const parseState = (state: unknown) => {
 		if (typeof state === 'object' && state !== null) {
 			return {
@@ -138,6 +138,10 @@ export const createMockProvider = (config?: { requireReplacement?: boolean }) =>
 					store.delete(item.id)
 				},
 				async planResourceChange(props) {
+					if (config?.planError) {
+						throw new Error('The proposed state is not plannable.')
+					}
+
 					return {
 						state: props.proposedState,
 						requiresReplacement: config?.requireReplacement ?? false,
@@ -161,7 +165,7 @@ export const Resource = createCustomResourceClass<
 	}
 >('custom', 'resource')
 
-export const createMockWorkSpace = (config?: { hooks?: Hooks; requireReplacement?: boolean }) => {
+export const createMockWorkSpace = (config?: { hooks?: Hooks; requireReplacement?: boolean; planError?: boolean }) => {
 	const logs: string[] = []
 	const stateBackend = new MemoryStateBackend()
 	const lockBackend = new MemoryLockBackend()

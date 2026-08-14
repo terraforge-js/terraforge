@@ -2,6 +2,7 @@ import { DynamoDB } from "@aws-sdk/client-dynamodb";
 import { UUID } from "node:crypto";
 import { S3Client } from "@aws-sdk/client-s3";
 import { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
+
 //#region src/future.d.ts
 declare class Future<T = unknown> {
   protected callback: (resolve: (data: T) => void, reject: (error: unknown) => void) => void;
@@ -22,7 +23,7 @@ declare class Future<T = unknown> {
 //#region src/input.d.ts
 type Input<T = unknown> = T | Output<T> | Future<T> | Promise<T>;
 type OptionalInput<T = unknown> = Input<T> | Input<T | undefined> | Input<undefined>;
-type UnwrapInputArray<T extends Input[]> = { [K in keyof T]: UnwrapInput<T[K]>; };
+type UnwrapInputArray<T extends Input[]> = { [K in keyof T]: UnwrapInput<T[K]> };
 type UnwrapInput<T> = T extends Input<infer V> ? V : T;
 declare const findInputDeps: (props: unknown) => Meta[];
 declare const resolveInputs: <T>(inputs: T, fallback?: (path: Array<string | number>) => unknown) => Promise<T>;
@@ -381,11 +382,11 @@ declare class WorkSpace {
   refresh(app: App, options?: ProcedureOptions): Promise<{
     operations: ({
       urn: URN;
-      operation: 'delete';
+      operation: "delete";
       commit(): void;
     } | {
       urn: URN;
-      operation: 'update';
+      operation: "update";
       before: State;
       after: State;
       commit(): void;
@@ -567,4 +568,4 @@ type CustomResourceProvider = Partial<{
 }>;
 declare const createCustomProvider: (providerId: string, resourceProviders: Record<string, CustomResourceProvider>) => Provider;
 //#endregion
-export { type ActivityLogBackend, AlreadyLockedError, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DebugSink, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, type LockBackend, type Log, type LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type RefreshResourceProps, type RefreshResourceResult, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, type StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, disableDebug, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
+export { ActivityLogBackend, AlreadyLockedError, App, AppError, type Config, type CreateProps, type CustomResourceProvider, type DataSource, type DataSourceFunction, type DataSourceMeta, type DebugSink, type DeleteProps, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, type GetDataProps, type GetProps, Group, type Input, LockBackend, Log, LogProps, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, type Meta, type Node, type OptionalInput, type OptionalOutput, Output, type PlanProps, type ProcedureOptions, type Provider, type RefreshResourceProps, type RefreshResourceResult, type Resource, ResourceAlreadyExists, type ResourceClass, type ResourceConfig, ResourceError, type ResourceMeta, ResourceNotFound, type ResourceStatus, type ResourceStatusInfo, S3StateBackend, Stack, type StackStatusInfo, type State, StateBackend, type Tag, type URN, type UpdateProps, WorkSpace, type WorkSpaceOptions, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, disableDebug, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };

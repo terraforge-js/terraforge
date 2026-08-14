@@ -9,6 +9,7 @@ import { NodeState, removeEmptyStackStates } from '../state.ts'
 import { migrateAppState } from '../state/migrate.ts'
 import { ProcedureOptions, WorkSpaceOptions } from '../workspace.ts'
 import { deleteResource } from './delete-resource.ts'
+import { flushPendingDeletes } from './flush-pending-deletes.ts'
 
 export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptions) => {
 	const stackNameByNodeUrn = new Map<URN, string>()
@@ -104,27 +105,7 @@ export const deleteApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 			// Process pending deletes from previous failed createBeforeReplace
 
 			if (errors.length === 0 && appState.pendingDeletes) {
-				for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
-					const stackName = stackNameByNodeUrn.get(urn)
-					if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) {
-						continue
-					}
-
-					try {
-						await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
-						delete appState.pendingDeletes[urn]
-					} catch (error) {
-						if (error instanceof Error) {
-							errors.push(error)
-						} else {
-							errors.push(new Error(`${error}`))
-						}
-					}
-				}
-
-				if (Object.keys(appState.pendingDeletes).length === 0) {
-					delete appState.pendingDeletes
-				}
+				errors.push(...(await flushPendingDeletes(appState, stackNameByNodeUrn, opt)))
 			}
 
 			// -------------------------------------------------------------------

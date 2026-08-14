@@ -11,6 +11,7 @@ import { DynamoDB } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { createHash, randomUUID } from "node:crypto";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+
 //#region src/node.ts
 const nodeMetaSymbol = Symbol("metadata");
 const isNode = (obj) => {
@@ -26,12 +27,10 @@ const isResource = (obj) => {
 const isDataSource = (obj) => {
 	return isNode(obj) && obj[nodeMetaSymbol].tag === "data";
 };
+
 //#endregion
 //#region src/group.ts
 var Group = class Group {
-	parent;
-	type;
-	name;
 	children = [];
 	constructor(parent, type, name) {
 		this.parent = parent;
@@ -70,10 +69,10 @@ var Group = class Group {
 		return this.nodes.filter((node) => isDataSource(node));
 	}
 };
+
 //#endregion
 //#region src/stack.ts
 var Stack = class extends Group {
-	app;
 	dependencies = /* @__PURE__ */ new Set();
 	constructor(app, name) {
 		super(app, "stack", name);
@@ -85,10 +84,10 @@ const findParentStack = (group) => {
 	if (!group.parent) throw new Error("No stack found");
 	return findParentStack(group.parent);
 };
+
 //#endregion
 //#region src/app.ts
 var App = class extends Group {
-	name;
 	constructor(name) {
 		super(void 0, "app", name);
 		this.name = name;
@@ -97,6 +96,7 @@ var App = class extends Group {
 		return this.children.filter((child) => child instanceof Stack);
 	}
 };
+
 //#endregion
 //#region src/future.ts
 const IDLE = 0;
@@ -104,8 +104,6 @@ const PENDING = 1;
 const RESOLVED = 2;
 const REJECTED = 3;
 var Future = class Future {
-	callback;
-	volatile;
 	listeners = /* @__PURE__ */ new Set();
 	status = IDLE;
 	data;
@@ -123,25 +121,25 @@ var Future = class Future {
 		}
 	}
 	pipe(cb) {
-		return new Future((resolve, reject) => {
+		return new Future((resolve$1, reject) => {
 			this.then((value) => {
-				Promise.resolve(cb(value)).then((value) => {
-					resolve(value);
+				Promise.resolve(cb(value)).then((value$1) => {
+					resolve$1(value$1);
 				}).catch(reject);
 			}, reject);
 		}, this.volatile);
 	}
-	then(resolve, reject) {
+	then(resolve$1, reject) {
 		if (this.volatile) try {
-			Promise.resolve(this.callback(resolve, (error) => reject?.(error))).catch((error) => reject?.(error));
+			Promise.resolve(this.callback(resolve$1, (error) => reject?.(error))).catch((error) => reject?.(error));
 		} catch (error) {
 			reject?.(error);
 		}
-		else if (this.status === RESOLVED) resolve(this.data);
+		else if (this.status === RESOLVED) resolve$1(this.data);
 		else if (this.status === REJECTED) reject?.(this.error);
 		else {
 			this.listeners.add({
-				resolve,
+				resolve: resolve$1,
 				reject
 			});
 			if (this.status === IDLE) {
@@ -150,7 +148,7 @@ var Future = class Future {
 					if (this.status === PENDING) {
 						this.status = RESOLVED;
 						this.data = data;
-						this.listeners.forEach(({ resolve }) => resolve(data));
+						this.listeners.forEach(({ resolve: resolve$2 }) => resolve$2(data));
 						this.listeners.clear();
 					}
 				};
@@ -158,7 +156,7 @@ var Future = class Future {
 					if (this.status === PENDING) {
 						this.status = REJECTED;
 						this.error = error;
-						this.listeners.forEach(({ reject }) => reject?.(error));
+						this.listeners.forEach(({ reject: reject$1 }) => reject$1?.(error));
 						this.listeners.clear();
 					}
 				};
@@ -171,14 +169,15 @@ var Future = class Future {
 		}
 	}
 };
+
 //#endregion
 //#region src/input.ts
 const findInputDeps = (props) => {
 	const deps = [];
-	const find = (props) => {
-		if (props instanceof Output) deps.push(...props.dependencies);
-		else if (Array.isArray(props)) props.map(find);
-		else if (props?.constructor === Object) Object.values(props).map(find);
+	const find = (props$1) => {
+		if (props$1 instanceof Output) deps.push(...props$1.dependencies);
+		else if (Array.isArray(props$1)) props$1.map(find);
+		else if (props$1?.constructor === Object) Object.values(props$1).map(find);
 	};
 	find(props);
 	return deps;
@@ -198,40 +197,40 @@ const resolveWithTimeout = async (promise) => {
 	}
 };
 const resolveInputs = async (inputs, fallback) => {
-	const resolve = async (value, path) => {
+	const resolve$1 = async (value, path) => {
 		if (value instanceof Output || value instanceof Future || value instanceof Promise) try {
 			return await resolveWithTimeout(value);
 		} catch (error) {
 			if (fallback) return fallback(path);
 			throw error;
 		}
-		if (Array.isArray(value)) return Promise.all(value.map((item, index) => resolve(item, [...path, index])));
+		if (Array.isArray(value)) return Promise.all(value.map((item, index) => resolve$1(item, [...path, index])));
 		if (value?.constructor === Object) {
-			const entries = Object.entries(value);
-			const resolved = await Promise.all(entries.map(([key, item]) => resolve(item, [...path, key])));
+			const entries$1 = Object.entries(value);
+			const resolved = await Promise.all(entries$1.map(([key, item]) => resolve$1(item, [...path, key])));
 			const result = {};
-			entries.forEach(([key], i) => {
+			entries$1.forEach(([key], i) => {
 				result[key] = resolved[i];
 			});
 			return result;
 		}
 		return value;
 	};
-	return resolve(inputs, []);
+	return resolve$1(inputs, []);
 };
+
 //#endregion
 //#region src/output.ts
 var Output = class Output extends Future {
-	dependencies;
 	constructor(dependencies, callback, volatile = false) {
 		super(callback, volatile);
 		this.dependencies = dependencies;
 	}
 	pipe(cb) {
-		return new Output(this.dependencies, (resolve, reject) => {
+		return new Output(this.dependencies, (resolve$1, reject) => {
 			this.then((value) => {
-				Promise.resolve(cb(value)).then((value) => {
-					resolve(value);
+				Promise.resolve(cb(value)).then((value$1) => {
+					resolve$1(value$1);
 				}).catch(reject);
 			}, reject);
 		}, this.volatile);
@@ -241,7 +240,7 @@ const deferredOutput = (cb) => {
 	return new Output(/* @__PURE__ */ new Set(), cb);
 };
 const output = (value) => {
-	return deferredOutput((resolve) => resolve(value));
+	return deferredOutput((resolve$1) => resolve$1(value));
 };
 const hasVolatileInput = (props) => {
 	if (props instanceof Future) return props.volatile;
@@ -250,9 +249,9 @@ const hasVolatileInput = (props) => {
 	return false;
 };
 const combine = (...inputs) => {
-	return new Output(new Set(findInputDeps(inputs)), (resolve, reject) => {
+	return new Output(new Set(findInputDeps(inputs)), (resolve$1, reject) => {
 		Promise.all(inputs).then(resolveInputs).then((result) => {
-			resolve(result);
+			resolve$1(result);
 		}, reject);
 	}, hasVolatileInput(inputs));
 };
@@ -269,17 +268,19 @@ const interpolate = (literals, ...placeholders) => {
 		return result.join("");
 	});
 };
+
 //#endregion
 //#region src/urn.ts
 const createUrn = (tag, type, name, parentUrn) => {
 	return `${parentUrn ? parentUrn : "urn"}:${tag}:${type}:{${name}}`;
 };
+
 //#endregion
 //#region src/meta.ts
 const createMeta = (tag, provider, parent, type, logicalId, input, config) => {
 	const urn = createUrn(tag, type, logicalId, parent.urn);
 	const stack = findParentStack(parent);
-	let output;
+	let output$1;
 	let resolved = false;
 	return {
 		tag,
@@ -301,20 +302,21 @@ const createMeta = (tag, provider, parent, type, logicalId, input, config) => {
 			return dependencies;
 		},
 		resolve(data) {
-			output = data;
+			output$1 = data;
 			resolved = true;
 		},
 		output(cb) {
-			return new Output(/* @__PURE__ */ new Set([this]), (resolve, reject) => {
+			return new Output(new Set([this]), (resolve$1, reject) => {
 				if (!resolved) {
 					reject(/* @__PURE__ */ new Error(`Unresolved output for ${tag}: ${urn}`));
 					return;
 				}
-				resolve(cb(output));
+				resolve$1(cb(output$1));
 			}, true);
 		}
 	};
 };
+
 //#endregion
 //#region src/debug.ts
 const consoleSink = (group, ...args) => {
@@ -334,15 +336,16 @@ const createDebugger = (group) => {
 		sink?.(group, ...args);
 	};
 };
+
 //#endregion
 //#region src/backend/lock.ts
 var AlreadyLockedError = class extends Error {
-	urn;
 	constructor(urn) {
 		super(`Already locked: ${urn}`);
 		this.urn = urn;
 	}
 };
+
 //#endregion
 //#region src/workspace/exit.ts
 const listeners = /* @__PURE__ */ new Set();
@@ -374,6 +377,7 @@ const withOnExit = async (cb, fn) => {
 		release();
 	}
 };
+
 //#endregion
 //#region src/workspace/lock.ts
 const lockApp = async (lockBackend, app, fn) => {
@@ -398,6 +402,7 @@ const lockApp = async (lockBackend, app, fn) => {
 	}
 	return result;
 };
+
 //#endregion
 //#region src/workspace/concurrency.ts
 const createConcurrencyQueue = (concurrency) => {
@@ -406,11 +411,13 @@ const createConcurrencyQueue = (concurrency) => {
 		return queue(cb);
 	};
 };
+
 //#endregion
 //#region src/workspace/entries.ts
 const entries = (object) => {
 	return Object.entries(object);
 };
+
 //#endregion
 //#region src/workspace/dependency.ts
 var DependencyGraph = class {
@@ -523,12 +530,10 @@ const allowsDependentReplace = (replaceOnChanges, dependencyPaths) => {
 	}
 	return false;
 };
+
 //#endregion
 //#region src/workspace/error.ts
 var ResourceError = class ResourceError extends Error {
-	urn;
-	type;
-	operation;
 	static wrap(urn, type, operation, error) {
 		if (error instanceof Error) return new ResourceError(urn, type, operation, error.message);
 		return new ResourceError(urn, type, operation, "Unknown Error");
@@ -541,8 +546,6 @@ var ResourceError = class ResourceError extends Error {
 	}
 };
 var AppError = class extends Error {
-	app;
-	issues;
 	constructor(app, issues, message) {
 		super(message);
 		this.app = app;
@@ -551,6 +554,7 @@ var AppError = class extends Error {
 };
 var ResourceNotFound = class extends Error {};
 var ResourceAlreadyExists = class extends Error {};
+
 //#endregion
 //#region src/workspace/state.ts
 const compareState = (left, right) => {
@@ -566,13 +570,14 @@ const compareState = (left, right) => {
 const removeEmptyStackStates = (appState) => {
 	for (const [stackUrn, stackState] of entries(appState.stacks)) if (Object.keys(stackState.nodes).length === 0) delete appState.stacks[stackUrn];
 };
+
 //#endregion
 //#region src/workspace/state/v1.ts
 const v1 = (oldAppState) => {
 	const stacks = {};
 	for (const [urn, stack] of entries(oldAppState.stacks)) {
 		const nodes = {};
-		for (const [urn, resource] of entries(stack.resources)) nodes[urn] = {
+		for (const [urn$1, resource] of entries(stack.resources)) nodes[urn$1] = {
 			...resource,
 			tag: "resource"
 		};
@@ -588,6 +593,7 @@ const v1 = (oldAppState) => {
 		version: 1
 	};
 };
+
 //#endregion
 //#region src/workspace/state/v2.ts
 const v2 = (oldAppState) => {
@@ -602,6 +608,7 @@ const v2 = (oldAppState) => {
 		version: 2
 	};
 };
+
 //#endregion
 //#region src/workspace/state/migrate.ts
 const versions = [[1, v1], [2, v2]];
@@ -614,17 +621,20 @@ const getMigratedAppState = async (backend, urn) => {
 	const state = await backend.get(urn);
 	return state ? migrateAppState(state) : void 0;
 };
+
 //#endregion
 //#region src/provider.ts
 const findProvider = (providers, id) => {
 	for (const provider of providers) if (provider.ownResource(id)) return provider;
 	throw new TypeError(`Can't find the "${id}" provider.`);
 };
+
 //#endregion
 //#region src/workspace/token.ts
 const createIdempotantToken = (appToken, urn, operation) => {
 	return v5(`${urn}-${operation}`, appToken);
 };
+
 //#endregion
 //#region src/workspace/procedure/delete-resource.ts
 const debug$7 = createDebugger("Delete");
@@ -660,6 +670,7 @@ const deleteResource = async (appToken, urn, state, opt) => {
 		else throw ResourceError.wrap(urn, state.type, "delete", error);
 	}
 };
+
 //#endregion
 //#region src/workspace/procedure/delete-app.ts
 const deleteApp = async (app, opt) => {
@@ -713,6 +724,7 @@ const deleteApp = async (app, opt) => {
 		if (Object.keys(appState.stacks).length === 0 && Object.keys(appState.pendingDeletes ?? {}).length === 0) await opt.backend.state.delete(app.urn);
 	});
 };
+
 //#endregion
 //#region src/workspace/replacement.ts
 const requiresReplacement = (priorState, proposedState, replaceOnChanges) => {
@@ -726,6 +738,7 @@ const requiresReplacement = (priorState, proposedState, replaceOnChanges) => {
 	}
 	return false;
 };
+
 //#endregion
 //#region src/workspace/procedure/create-resource.ts
 const debug$6 = createDebugger("Create");
@@ -767,6 +780,7 @@ const createResource = async (resource, appToken, input, opt) => {
 		output: result.state
 	};
 };
+
 //#endregion
 //#region src/workspace/procedure/get-data-source.ts
 const debug$5 = createDebugger("Data Source");
@@ -791,6 +805,7 @@ const getDataSource = async (dataSource, input, opt) => {
 		output: result.state
 	};
 };
+
 //#endregion
 //#region src/workspace/procedure/import-resource.ts
 const debug$4 = createDebugger("Import");
@@ -809,6 +824,7 @@ const importResource = async (resource, input, opt) => {
 			}
 		});
 	} catch (error) {
+		if (error instanceof ResourceNotFound) throw new ResourceNotFound(`The "${meta.type}" resource import "${meta.config?.import}" doesn't exist. (${meta.urn})`);
 		throw ResourceError.wrap(meta.urn, meta.type, "import", error);
 	}
 	return {
@@ -820,6 +836,7 @@ const importResource = async (resource, input, opt) => {
 		output: result.state
 	};
 };
+
 //#endregion
 //#region src/workspace/procedure/replace-resource.ts
 const debug$3 = createDebugger("Replace");
@@ -882,6 +899,7 @@ const replaceResource = async (resource, appToken, priorInputState, priorOutputS
 		output: result.state
 	};
 };
+
 //#endregion
 //#region src/workspace/procedure/update-resource.ts
 const debug$2 = createDebugger("Update");
@@ -925,6 +943,7 @@ const updateResource = async (resource, appToken, priorInputState, priorOutputSt
 		output: result.state
 	};
 };
+
 //#endregion
 //#region src/workspace/procedure/deploy-app.ts
 const debug$1 = createDebugger("Deploy App");
@@ -987,9 +1006,9 @@ const deployApp = async (app, opt) => {
 				return stack.urn === urn;
 			});
 			const isFilteredIn = !opt.filters?.length || opt.filters.includes(stackState.name);
-			if (!found && isFilteredIn) for (const [urn, nodeState] of entries(stackState.nodes)) graph.add(urn, dependentsOn(allNodes, urn), async () => {
-				if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn, nodeState, opt));
-				delete stackState.nodes[urn];
+			if (!found && isFilteredIn) for (const [urn$1, nodeState] of entries(stackState.nodes)) graph.add(urn$1, dependentsOn(allNodes, urn$1), async () => {
+				if (nodeState.tag === "resource") await queue(() => deleteResource(appState.idempotentToken, urn$1, nodeState, opt));
+				delete stackState.nodes[urn$1];
 			});
 		}
 		for (const stack of stacks) {
@@ -1015,16 +1034,16 @@ const deployApp = async (app, opt) => {
 							throw ResourceError.wrap(meta.urn, meta.type, "resolve", error);
 						}
 						if (isDataSource(node)) {
-							const meta = getMeta(node);
+							const meta$1 = getMeta(node);
 							if (!nodeState) {
-								const dataSourceState = await getDataSource(meta, input, opt);
-								nodeState = stackState.nodes[meta.urn] = {
+								const dataSourceState = await getDataSource(meta$1, input, opt);
+								nodeState = stackState.nodes[meta$1.urn] = {
 									...dataSourceState,
 									drifted: void 0,
 									...partialNewResourceState
 								};
 							} else if (!compareState(nodeState.input, input) || nodeState.drifted) {
-								const dataSourceState = await getDataSource(meta, input, opt);
+								const dataSourceState = await getDataSource(meta$1, input, opt);
 								Object.assign(nodeState, {
 									...dataSourceState,
 									drifted: void 0,
@@ -1033,75 +1052,85 @@ const deployApp = async (app, opt) => {
 							} else Object.assign(nodeState, partialNewResourceState);
 						}
 						if (isResource(node)) {
-							const meta = getMeta(node);
-							if (!nodeState) if (meta.config?.import) {
-								const importedState = await importResource(node, input, opt);
-								const newResourceState = await updateResource(node, appState.idempotentToken, importedState.input, importedState.output, input, opt);
-								nodeState = stackState.nodes[meta.urn] = {
-									...importedState,
-									...newResourceState,
-									...partialNewResourceState
-								};
+							const meta$1 = getMeta(node);
+							if (!nodeState) {
+								if (meta$1.config?.import) {
+									const importedState = await importResource(node, input, opt);
+									if (importedState) {
+										const newResourceState = await updateResource(node, appState.idempotentToken, importedState.input, importedState.output, input, opt);
+										nodeState = stackState.nodes[meta$1.urn] = {
+											...importedState,
+											...newResourceState,
+											...partialNewResourceState
+										};
+									}
+								}
+								if (!nodeState) {
+									const newResourceState = await createResource(node, appState.idempotentToken, input, opt);
+									nodeState = stackState.nodes[meta$1.urn] = {
+										...newResourceState,
+										...partialNewResourceState
+									};
+								}
 							} else {
-								const newResourceState = await createResource(node, appState.idempotentToken, input, opt);
-								nodeState = stackState.nodes[meta.urn] = {
-									...newResourceState,
-									...partialNewResourceState
-								};
-							}
-							else {
 								const inputChanged = !compareState(nodeState.input, input);
 								const hasDrift = !!nodeState.drifted;
 								if (!inputChanged && !hasDrift) Object.assign(nodeState, partialNewResourceState);
 								else {
 									let newResourceState;
-									const ignoreReplace = forcedUpdateDependents.has(meta.urn);
-									if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta.config?.replaceOnChanges ?? [])) if (meta.config?.createBeforeReplace) {
-										meta.resolve(input);
+									const ignoreReplace = forcedUpdateDependents.has(meta$1.urn);
+									if (!ignoreReplace && requiresReplacement(nodeState.input, input, meta$1.config?.replaceOnChanges ?? [])) if (meta$1.config?.createBeforeReplace) {
+										meta$1.resolve(input);
 										try {
 											for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
 												if (!isResource(dependentNode)) continue;
 												const dependentMeta = getMeta(dependentNode);
-												if (!dependentMeta.dependencies.has(meta.urn)) continue;
+												if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
 												const dependentStackState = stackStates.get(dependentMeta.stack.urn);
 												const dependentState = dependentStackState?.nodes[dependentUrn];
 												if (!dependentStackState || !dependentState) continue;
-												const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn);
+												const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
 												if (dependencyPaths.length === 0) continue;
 												const dependentProvider = findProvider(opt.providers, dependentMeta.provider);
 												if (dependentProvider.planResourceChange) {
 													const dependentProposedInput = await resolveInputs(dependentMeta.input, (path) => getAtPath(dependentState.input, path));
-													if ((await dependentProvider.planResourceChange({
-														type: dependentMeta.type,
-														priorState: dependentState.output,
-														proposedState: dependentProposedInput
-													})).requiresReplacement) {
-														if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+													let dependentRequiresReplacement;
+													try {
+														dependentRequiresReplacement = !!(await dependentProvider.planResourceChange({
+															type: dependentMeta.type,
+															priorState: dependentState.output,
+															proposedState: dependentProposedInput
+														})).requiresReplacement;
+													} catch {
+														dependentRequiresReplacement = true;
+													}
+													if (dependentRequiresReplacement) {
+														if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
 													}
 												}
 											}
 										} finally {
-											meta.resolve(nodeState.output);
+											meta$1.resolve(nodeState.output);
 										}
 										const priorState = { ...nodeState };
 										newResourceState = await createResource(node, appState.idempotentToken, input, opt);
-										if (newResourceState.output) meta.resolve(newResourceState.output);
-										if (!meta.config?.retainOnDelete) {
+										if (newResourceState.output) meta$1.resolve(newResourceState.output);
+										if (!meta$1.config?.retainOnDelete) {
 											appState.pendingDeletes ??= {};
-											appState.pendingDeletes[meta.urn] = priorState;
+											appState.pendingDeletes[meta$1.urn] = priorState;
 										}
 									} else {
 										for (const [dependentUrn, dependentNode] of nodeByUrn.entries()) {
 											if (!isResource(dependentNode)) continue;
 											const dependentMeta = getMeta(dependentNode);
-											if (!dependentMeta.dependencies.has(meta.urn)) continue;
+											if (!dependentMeta.dependencies.has(meta$1.urn)) continue;
 											if (plannedDependents.has(dependentUrn)) continue;
 											const dependentStackState = stackStates.get(dependentMeta.stack.urn);
 											const dependentState = dependentStackState?.nodes[dependentUrn];
 											if (!dependentStackState || !dependentState) continue;
-											const dependencyPaths = findDependencyPaths(dependentMeta.input, meta.urn);
+											const dependencyPaths = findDependencyPaths(dependentMeta.input, meta$1.urn);
 											if (dependencyPaths.length === 0) continue;
-											const detachedInput = stripDependencyInputs(dependentState.input, dependentMeta.input, meta.urn);
+											const detachedInput = stripDependencyInputs(dependentState.input, dependentMeta.input, meta$1.urn);
 											if (compareState(dependentState.input, detachedInput)) continue;
 											plannedDependents.add(dependentUrn);
 											let dependentRequiresReplacement = false;
@@ -1116,7 +1145,7 @@ const deployApp = async (app, opt) => {
 												throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", error);
 											}
 											if (dependentRequiresReplacement) {
-												if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
+												if (!allowsDependentReplace(dependentMeta.config?.replaceOnChanges, dependencyPaths)) throw ResourceError.wrap(dependentMeta.urn, dependentMeta.type, "update", /* @__PURE__ */ new Error(`Replacing ${meta$1.urn} requires ${dependentMeta.urn} to set replaceOnChanges for its dependency fields.`));
 												await deleteResource(appState.idempotentToken, dependentUrn, dependentState, opt);
 												delete dependentStackState.nodes[dependentUrn];
 											} else {
@@ -1129,11 +1158,11 @@ const deployApp = async (app, opt) => {
 											}
 										}
 										newResourceState = await replaceResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
-										if (newResourceState.output) meta.resolve(newResourceState.output);
+										if (newResourceState.output) meta$1.resolve(newResourceState.output);
 									}
 									else {
 										newResourceState = await updateResource(node, appState.idempotentToken, nodeState.input, nodeState.output, input, opt);
-										if (ignoreReplace) forcedUpdateDependents.delete(meta.urn);
+										if (ignoreReplace) forcedUpdateDependents.delete(meta$1.urn);
 									}
 									Object.assign(nodeState, {
 										input,
@@ -1173,6 +1202,7 @@ const deployApp = async (app, opt) => {
 		return appState;
 	});
 };
+
 //#endregion
 //#region src/workspace/procedure/hydrate.ts
 const hydrate = async (app, opt) => {
@@ -1186,6 +1216,7 @@ const hydrate = async (app, opt) => {
 		}
 	}
 };
+
 //#endregion
 //#region src/workspace/procedure/refresh.ts
 const createDeleteOperation = (urn, stackState, onCommit) => {
@@ -1261,6 +1292,7 @@ const refresh = async (app, opt) => {
 		};
 	}
 };
+
 //#endregion
 //#region src/workspace/procedure/status.ts
 /**
@@ -1366,10 +1398,10 @@ const status = async (app, opt) => {
 	}
 	return stacks;
 };
+
 //#endregion
 //#region src/workspace/workspace.ts
 var WorkSpace = class {
-	props;
 	constructor(props) {
 		this.props = props;
 	}
@@ -1471,10 +1503,10 @@ var WorkSpace = class {
 		}));
 	}
 };
+
 //#endregion
 //#region src/backend/memory/activity-log.ts
 var MemoryActivityLogBackend = class {
-	props;
 	groups = /* @__PURE__ */ new Map();
 	constructor(props = {}) {
 		this.props = props;
@@ -1494,6 +1526,7 @@ var MemoryActivityLogBackend = class {
 		return this.getLogGroup(urn).slice(-limit).reverse();
 	}
 };
+
 //#endregion
 //#region src/backend/memory/state.ts
 var MemoryStateBackend = class {
@@ -1512,6 +1545,7 @@ var MemoryStateBackend = class {
 		this.states.clear();
 	}
 };
+
 //#endregion
 //#region src/backend/memory/lock.ts
 var MemoryLockBackend = class {
@@ -1534,10 +1568,10 @@ var MemoryLockBackend = class {
 		this.locks.clear();
 	}
 };
+
 //#endregion
 //#region src/backend/file/activity-log.ts
 var FileActivityLogBackend = class {
-	props;
 	constructor(props) {
 		this.props = props;
 	}
@@ -1567,11 +1601,11 @@ var FileActivityLogBackend = class {
 		return content.split("\n").filter(Boolean).slice(-limit).map((line) => JSON.parse(line)).reverse();
 	}
 };
+
 //#endregion
 //#region src/backend/file/state.ts
 const debug = createDebugger("State");
 var FileStateBackend = class {
-	props;
 	constructor(props) {
 		this.props = props;
 	}
@@ -1595,10 +1629,10 @@ var FileStateBackend = class {
 	async update(urn, state) {
 		debug("update");
 		await this.mkdir();
-		const file = this.stateFile(urn);
-		const temp = `${file}.tmp`;
+		const file$1 = this.stateFile(urn);
+		const temp = `${file$1}.tmp`;
 		await writeFile(temp, JSON.stringify(state, void 0, 2));
-		await rename(temp, file);
+		await rename(temp, file$1);
 	}
 	async delete(urn) {
 		debug("delete");
@@ -1606,10 +1640,10 @@ var FileStateBackend = class {
 		await rm(this.stateFile(urn));
 	}
 };
+
 //#endregion
 //#region src/backend/file/lock.ts
 var FileLockBackend = class {
-	props;
 	constructor(props) {
 		this.props = props;
 	}
@@ -1635,10 +1669,10 @@ var FileLockBackend = class {
 		}
 	}
 };
+
 //#endregion
 //#region src/backend/aws/dynamo-activity-log.ts
 var DynamoActivityLogBackend = class {
-	props;
 	client;
 	constructor(props) {
 		this.props = props;
@@ -1668,6 +1702,7 @@ var DynamoActivityLogBackend = class {
 		}) ?? [];
 	}
 };
+
 //#endregion
 //#region src/backend/aws/dynamo-lock.ts
 const LOCK_TTL = 5 * 6e4;
@@ -1676,7 +1711,6 @@ const isConditionalCheckFailed = (error) => {
 	return error instanceof Error && error.name === "ConditionalCheckFailedException";
 };
 var DynamoLockBackend = class {
-	props;
 	client;
 	constructor(props) {
 		this.props = props;
@@ -1754,10 +1788,10 @@ var DynamoLockBackend = class {
 		};
 	}
 };
+
 //#endregion
 //#region src/backend/aws/s3-state.ts
 var S3StateBackend = class {
-	props;
 	client;
 	constructor(props) {
 		this.props = props;
@@ -1792,20 +1826,22 @@ var S3StateBackend = class {
 		}));
 	}
 };
+
 //#endregion
 //#region src/helpers.ts
 const file = (path, encoding = "utf8") => {
-	return new Future(async (resolve, reject) => {
+	return new Future(async (resolve$1, reject) => {
 		try {
-			resolve(await readFile(path, { encoding }));
+			resolve$1(await readFile(path, { encoding }));
 		} catch (error) {
 			reject(error);
 		}
 	});
 };
 const hash = (path, algo = "sha256") => {
-	return file(path).pipe((file) => createHash(algo).update(file).digest("hex"));
+	return file(path).pipe((file$1) => createHash(algo).update(file$1).digest("hex"));
 };
+
 //#endregion
 //#region src/globals.ts
 globalThis.$resolve = resolve;
@@ -1813,12 +1849,13 @@ globalThis.$combine = combine;
 globalThis.$interpolate = interpolate;
 globalThis.$hash = hash;
 globalThis.$file = file;
+
 //#endregion
 //#region src/custom/resource.ts
 const createCustomResourceClass = (providerId, resourceType) => {
 	return new Proxy(class {}, { construct(_, [parent, id, input, config]) {
 		const meta = createMeta("resource", `custom:${providerId}`, parent, resourceType, id, input, config);
-		const node = new Proxy({}, { get(_, key) {
+		const node = new Proxy({}, { get(_$1, key) {
 			if (key === nodeMetaSymbol) return meta;
 			if (key === "urn") return meta.urn;
 			if (typeof key === "symbol") return;
@@ -1828,67 +1865,67 @@ const createCustomResourceClass = (providerId, resourceType) => {
 		return node;
 	} });
 };
+
 //#endregion
 //#region src/custom/provider.ts
 const createCustomProvider = (providerId, resourceProviders) => {
 	const version = 1;
-	const hasRefreshResource = Object.values(resourceProviders).some((provider) => !!provider.refreshResource);
+	const hasRefreshResource = Object.values(resourceProviders).some((provider$1) => !!provider$1.refreshResource);
 	const getProvider = (type) => {
-		const provider = resourceProviders[type];
-		if (!provider) throw new Error(`The "${providerId}" provider doesn't support the "${type}" resource type.`);
-		return provider;
+		const provider$1 = resourceProviders[type];
+		if (!provider$1) throw new Error(`The "${providerId}" provider doesn't support the "${type}" resource type.`);
+		return provider$1;
 	};
 	const provider = {
 		ownResource(id) {
 			return id === `custom:${providerId}`;
 		},
 		async getResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.getResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.getResource) return {
 				version,
 				state: props.state
 			};
 			return {
 				version,
-				state: await provider.getResource(props)
+				state: await provider$1.getResource(props)
 			};
 		},
 		async createResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.createResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.createResource) return {
 				version,
 				state: props.state
 			};
 			return {
 				version,
-				state: await provider.createResource(props)
+				state: await provider$1.createResource(props)
 			};
 		},
 		async updateResource({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.updateResource) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.updateResource) return {
 				version,
 				state: props.proposedState
 			};
 			return {
 				version,
-				state: await provider.updateResource(props)
+				state: await provider$1.updateResource(props)
 			};
 		},
 		async deleteResource({ type, ...props }) {
 			await getProvider(type).deleteResource?.(props);
 		},
 		async planResourceChange({ type, ...props }) {
-			const provider = getProvider(type);
-			if (!provider.planResourceChange) return {
+			const provider$1 = getProvider(type);
+			if (!provider$1.planResourceChange) return {
 				version,
 				state: props.proposedState,
 				requiresReplacement: false
 			};
-			const result = await provider.planResourceChange(props);
 			return {
 				version,
-				...result
+				...await provider$1.planResourceChange(props)
 			};
 		},
 		async getData({ type, ...props }) {
@@ -1903,5 +1940,6 @@ const createCustomProvider = (providerId, resourceProviders) => {
 	};
 	return provider;
 };
+
 //#endregion
 export { AlreadyLockedError, App, AppError, DynamoActivityLogBackend, DynamoLockBackend, FileActivityLogBackend, FileLockBackend, FileStateBackend, Future, Group, MemoryActivityLogBackend, MemoryLockBackend, MemoryStateBackend, Output, ResourceAlreadyExists, ResourceError, ResourceNotFound, S3StateBackend, Stack, WorkSpace, createCustomProvider, createCustomResourceClass, createDebugger, createMeta, deferredOutput, disableDebug, enableDebug, findInputDeps, getMeta, isDataSource, isNode, isResource, nodeMetaSymbol, output, resolveInputs };
