@@ -286,24 +286,42 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 
 									if (meta.config?.import) {
 										const importedState = await importResource(node, input, opt)
-										const newResourceState = await updateResource(
-											node,
-											appState.idempotentToken!,
-											importedState.input,
-											importedState.output,
-											input,
-											opt
-										)
 
-										nodeState = stackState.nodes[meta.urn] = {
-											...importedState,
-											...newResourceState,
-											...partialNewResourceState,
+										// Toggle: swap in the call below to let a resource
+										// that doesn't exist yet fall through to a plain
+										// create, instead of failing the deploy.
+										// (add ResourceNotFound to the '../error.ts' import)
+										//
+										// const importedState = await importResource(node, input, opt).catch(error => {
+										// 	if (error instanceof ResourceNotFound) {
+										// 		return undefined
+										// 	}
+										//
+										// 	throw error
+										// })
+
+										if (importedState) {
+											const newResourceState = await updateResource(
+												node,
+												appState.idempotentToken!,
+												importedState.input,
+												importedState.output,
+												input,
+												opt
+											)
+
+											nodeState = stackState.nodes[meta.urn] = {
+												...importedState,
+												...newResourceState,
+												...partialNewResourceState,
+											}
 										}
-									} else {
-										// --------------------------------------------------
-										// Create resource
+									}
 
+									// --------------------------------------------------
+									// Create resource
+
+									if (!nodeState) {
 										const newResourceState = await createResource(
 											node,
 											appState.idempotentToken!,
@@ -383,14 +401,27 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 																path => getAtPath(dependentState.input, path)
 															)
 
-															const dependentPlan =
-																await dependentProvider.planResourceChange({
-																	type: dependentMeta.type,
-																	priorState: dependentState.output,
-																	proposedState: dependentProposedInput,
-																})
+															let dependentRequiresReplacement: boolean
 
-															if (dependentPlan.requiresReplacement) {
+															try {
+																const dependentPlan =
+																	await dependentProvider.planResourceChange({
+																		type: dependentMeta.type,
+																		priorState: dependentState.output,
+																		proposedState: dependentProposedInput,
+																	})
+
+																dependentRequiresReplacement =
+																	!!dependentPlan.requiresReplacement
+															} catch {
+																// Computed inputs can resolve to null when they can't be
+																// rebuilt from stored state, making the proposed state
+																// invalid for planning. Assume a replacement is needed and
+																// let the annotation check below decide.
+																dependentRequiresReplacement = true
+															}
+
+															if (dependentRequiresReplacement) {
 																if (
 																	!allowsDependentReplace(
 																		dependentMeta.config?.replaceOnChanges,
