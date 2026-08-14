@@ -635,23 +635,35 @@ export const deployApp = async (app: App, opt: WorkSpaceOptions & ProcedureOptio
 			const errors = await graph.run()
 
 			if (errors.length === 0 && appState.pendingDeletes) {
-				for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
-					const stackName = stackNameByNodeUrn.get(urn)
-					if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) {
-						continue
-					}
+				// The queue holds no dependency information, so a delete can
+				// fail while the resources depending on it are still queued.
+				// Sweep repeatedly until a pass deletes nothing, so earlier
+				// failures retry once their dependents are gone. Only the
+				// failures of the final pass surface as errors.
+				let progressed = true
+				let failures: Error[] = []
 
-					try {
-						await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
-						delete appState.pendingDeletes[urn]
-					} catch (error) {
-						if (error instanceof Error) {
-							errors.push(error)
-						} else {
-							errors.push(new Error(`${error}`))
+				while (progressed) {
+					progressed = false
+					failures = []
+
+					for (const [urn, nodeState] of entries(appState.pendingDeletes)) {
+						const stackName = stackNameByNodeUrn.get(urn)
+						if (opt.filters?.length && (!stackName || !opt.filters.includes(stackName))) {
+							continue
+						}
+
+						try {
+							await deleteResource(appState.idempotentToken!, urn, nodeState, opt)
+							delete appState.pendingDeletes[urn]
+							progressed = true
+						} catch (error) {
+							failures.push(error instanceof Error ? error : new Error(`${error}`))
 						}
 					}
 				}
+
+				errors.push(...failures)
 
 				if (Object.keys(appState.pendingDeletes).length === 0) {
 					delete appState.pendingDeletes
