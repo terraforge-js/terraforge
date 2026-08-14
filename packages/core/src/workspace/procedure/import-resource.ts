@@ -3,7 +3,7 @@ import { State } from '../../meta.ts'
 import { getMeta } from '../../node.ts'
 import { findProvider } from '../../provider.ts'
 import { Resource } from '../../resource.ts'
-import { ResourceError } from '../error.ts'
+import { ResourceError, ResourceNotFound } from '../error.ts'
 import { NodeState } from '../state.ts'
 import { WorkSpaceOptions } from '../workspace.ts'
 
@@ -31,6 +31,14 @@ export const importResource = async (
 			},
 		})
 	} catch (error) {
+		// The not-found class survives unwrapped, so the create
+		// fallback in deploy-app can toggle on it.
+		if (error instanceof ResourceNotFound) {
+			throw new ResourceNotFound(
+				`The "${meta.type}" resource import "${meta.config?.import}" doesn't exist. (${meta.urn})`
+			)
+		}
+
 		throw ResourceError.wrap(meta.urn, meta.type, 'import', error)
 	}
 
